@@ -1,0 +1,62 @@
+---
+title: "Modern Data Mining - Final Project"
+author:
+- Jia Xu
+- Yuqin Zhang
+- Zejia Cai
+output:
+  pdf_document:
+    toc: yes
+    toc_depth: '4'
+  html_document:
+    code_folding: show
+    highlight: haddock
+    theme: lumen
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+  word_document:
+    toc: yes
+    toc_depth: '4'
+urlcolor: blue  
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(fig.height=4, fig.width=6, warning = F)
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(data.table,randomForest, tree, ISLR, rpart, gbm, rpart.plot, caret, MASS, rattle, pROC, partykit, ggplot2, glmnet, leaps, dplyr, keras, neuralnet, imager, ranger, elasticnet,factoextra, stargazer)
+```
+
+# EDA
+
+* Read Data
+```{r}
+data <- read.csv('data/OASIS3.csv')
+adrc <- read.csv('data/ADRC Clinical Data.csv')
+
+data <- data.table(data, key = "Subject" )
+adrc <- data.table(adrc %>% select(Subject, cdr, commun, dx1), key = "Subject")
+df <- data[adrc]
+head(df)
+names(df)
+```
+```{r}
+df <- df[-which(names(df) %in% c("Hand","YOB"))] 
+summary <- summary(df)
+stargazer(df,type = 'text')
+```
+
+* To be continued...
+
+## Data Cleaning
+
+## Data Visualization
+
+## Feature engineering maybe?
+
+# Model Building
+
+
+# Model Evaluation
+
+# Conclusion
