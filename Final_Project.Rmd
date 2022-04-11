@@ -35,7 +35,7 @@ data <- read.csv('data/OASIS3.csv')
 adrc <- read.csv('data/ADRC Clinical Data.csv')
 
 data <- data.table(data, key = "Subject" )
-adrc <- data.table(adrc %>% select(Subject, cdr, commun, dx1), key = "Subject")
+adrc <- data.table(adrc %>% select(Subject, cdr, mmse, commun, dx1), key = "Subject")
 df <- data[adrc]
 head(df)
 names(df)
