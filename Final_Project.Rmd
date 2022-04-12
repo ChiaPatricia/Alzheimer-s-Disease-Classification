@@ -6,19 +6,23 @@ author:
 - Zejia Cai
 output:
   pdf_document:
-    toc: yes
+    number_sections: no
+    toc: no
     toc_depth: '4'
   html_document:
     code_folding: show
     highlight: haddock
-    theme: lumen
+    number_sections: yes
+    theme: cosmo
     toc: yes
     toc_depth: 4
     toc_float: yes
   word_document:
     toc: yes
     toc_depth: '4'
-urlcolor: blue  
+urlcolor: blue
+editor_options: 
+  chunk_output_type: inline
 ---
 
 ```{r setup, include=FALSE}
@@ -27,13 +31,55 @@ if (!require("pacman")) install.packages("pacman")
 pacman::p_load(data.table,randomForest, tree, ISLR, rpart, gbm, rpart.plot, caret, MASS, rattle, pROC, partykit, ggplot2, glmnet, leaps, dplyr, keras, neuralnet, imager, ranger, elasticnet,factoextra, stargazer)
 ```
 
-# EDA
+# Abstract
 
-* Read Data
+# Description of the Data
+
+
+# Data Cleaning and Preparation
+
 ```{r}
 data <- read.csv('data/OASIS3.csv')
 adrc <- read.csv('data/ADRC Clinical Data.csv')
+```
 
+
+```{r}
+## YOB is all missing
+data <- data %>% select(-YOB)
+
+## Starting from row 1139, no imaging data is being recorded. So only keep the first 1138 patients
+missing_row <- c(rownames(data)[apply(data, 1, function(x) any(is.na(x)))])
+missing_row <- as.numeric(missing_row)
+res <- apply(data[missing_row,], 1, function(x) sum(is.na(x))) # check how many missing values each row has
+#res
+data <- data[1:1138,]
+```
+
+```{r}
+## check the number of columns which have missing values
+length(names(data)[apply(data, 2, function(x) any(is.na(x)))])
+
+## check the number of observations which have missing values
+length(unique(rownames(data)[apply(data, 1, function(x) any(is.na(x)))]))
+```
+
+```{r}
+head(data)
+```
+
+```{r}
+stargazer(data,type = 'text')
+```
+
+```{r}
+sum(is.na(data["PETs"]))
+```
+
+
+
+
+```{r}
 data <- data.table(data, key = "Subject" )
 adrc <- data.table(adrc %>% select(Subject, cdr, mmse, commun, dx1), key = "Subject")
 df <- data[adrc]
@@ -46,13 +92,10 @@ summary <- summary(df)
 stargazer(df,type = 'text')
 ```
 
-* To be continued...
 
-## Data Cleaning
+# Exploratory Data Analysis
 
-## Data Visualization
-
-## Feature engineering maybe?
+# Feature engineering maybe?
 
 # Model Building
 
