@@ -1,5 +1,6 @@
 ---
 title: "Modern Data Mining - Final Project"
+subtitle: "Predicting Dementia Among Elderly People"
 author:
 - Jia Xu
 - Yuqin Zhang
@@ -28,25 +29,259 @@ editor_options:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(fig.height=4, fig.width=6, warning = F)
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(data.table,randomForest, tree, ISLR, rpart, gbm, rpart.plot, caret, MASS, rattle, pROC, partykit, ggplot2, glmnet, leaps, dplyr, keras, neuralnet, imager, ranger, elasticnet,factoextra, stargazer)
+pacman::p_load(data.table,randomForest, tree, ISLR, rpart, gbm, rpart.plot, caret, car, MASS, rattle, pROC, partykit, ggplot2, glmnet, leaps, dplyr, keras, neuralnet, imager, ranger, elasticnet,factoextra, stargazer)
 ```
 
-# Abstract
+# I. Abstract
 
-# Description of the Data
+Alzheimer’s disease (AD) is the most common type of dementia among elderly people that leads to memory loss. More severely, it can affect the patient to carry out daily activities. AD is a progressive disease and usually starts slowly, but changes in the brain can begin many years before the appearance of first symptoms. Age has also shown to be associated with the risk of developing AD.
+
+Our [data](https://www.kaggle.com/datasets/jboysen/mri-and-alzheimers?select=oasis_longitudinal.csv) consists of Magnetic Resonance Imaging information for demented and nondemented elderly adults. In this study, we present several ways of building classifiers to predict whether a subject will be diagnosed to develop dementia.
+
+The data was released by Open Access Series of Imaging Studies (OASIS).
+
+# II. Description of the Data
+
+The dataset is a longitudinal collection of MRI scan history of 150 elder adults aged between 60 and 98. Subjects may be scanned more than once, and there are 373 imaging sessions recorded in total. The following table showcases the features that the original data contains:
+
+|  Variable Name   | Description |
+|-------|-------|
+| Subject.ID | The unique identification of each subject |
+| MRI.ID | The unique identification of each scan session |
+| M.F | Gender of the subject |
+| Age | Age of the subject |
+| Hand | Dominant Hand |
+| EDUC | Years of education |
+| SES | Socialeconomic status |
+| MMSE | Mini Mental State Examination Score |
+| eTIV | Estimated total intracranial Volume |
+| nWBV | Normalized whole brain volume |
+| ASF | Atlas scaling factor |
+| MR.Delay | MR Delay Time |
+| CDR | Clinical Dementia Rating |
+
+Here are some more detailed explanations of the terms mentioned above:
+
+Mini Mental State Examination (MMSE): This is a 30-point questionnaire which has been widely adopted to measure cognitive functions among elderly people.
+
+Estimated total intracranial volume (eTIV): This is an estimated value of the maximum pre-morbid brain volume.
+
+Atlas scaling factor (ASF): This is a volume-scaling factor that standardizes the head size based on differences in human anatomy.
+
+MR Delay: A delayed MR is performed a few minutes after the injection of the contrast agent. The delayed contrast enhancement might reveal different biological information.
+
+Clinical Dementia Rating: This is a globally accepted measure of the overall severity of dementia.
 
 
-# Data Cleaning and Preparation
+# III. Data Cleaning and Preparation
+
+
+```{r, include = F}
+data <- read.csv("data/oasis_longitudinal.csv")
+
+# hand only has one unique value. 
+# Group has 3 categories: nondemented, demented, converted. Not interested in converted. Will create our own label.
+data <- data %>% select(-c(Hand,Group))
+head(data)
+```
+```{r, include = F}
+## check the number of columns which have missing values
+
+# SES has 19 missing values. MMSE has 2 missing values. 
+names(data)[apply(data, 2, function(x) any(is.na(x)))]
+sum(is.na(data$MMSE))
+sum(is.na(data$SES))
+```
+
+
+```{r, include = F}
+# column "SES" refers to social-economic status. It's a categorical variable. fill NA with the mode
+table(data$SES)
+data[is.na(data$SES),"SES"] <- 2
+table(data$SES)
+```
+
+```{r, include = F}
+# column "MMSE" refers to mini-mental state exam score, fill NA with mean
+unique(data$MMSE)
+mean(na.omit(data$MMSE))
+data[is.na(data$MMSE),"MMSE"] <- 27
+```
+
+```{r, include = F}
+# change gender to factor. recode
+colnames(data)[which(names(data) == "M.F")] <- "Gender"
+data$Gender <- as.factor(data$Gender)
+# data$Gender <- as.factor(ifelse(data$Gender=="F", 0, 1))
+
+# create label
+data$AD <- as.factor(ifelse(data$CDR==0, 0, 1))
+data <- data %>% select(-CDR)
+```
+
+```{r, include = F}
+summary(data)
+```
 
 
 
-# Exploratory Data Analysis
+## IV.Exploratory Data Analysis
+
+```{r echo = F}
+
+data %>% 
+  ggplot(aes(x=Age, fill = Gender)) +
+  geom_bar(position='dodge') +
+  labs(title = "Demographic Information of Subjects",
+       x = "Age",
+       y = "Number of Patients") +
+  theme_light()
+```
+
+## TODO:Change size legend! scale_size_manual doesn't work??
+
+
+AD is associated with lower mini mental state examination score. 
+Age does not pose a significant influence on the examination score and the diagnosis of AD.
+Two subjects are having significantly lower mini mental state examination score. They are also visiting the hospital very often.
+```{r echo = F}
+data %>% 
+  ggplot(aes(x=MMSE,y=Age, color = AD, size = Visit*0.1)) +
+  geom_jitter(alpha = 0.8) + 
+  labs(title = "Mini Mental State Examination Score, Age, Visit and AD diagnosis",
+       x = "Mini Mental State Examination Score") +
+  theme_light()
+```
+
+##TODO: more visualizations?
+
 
 # Feature engineering maybe?
 
-# Model Building
+# V. Model Building
+
+## Data Splitting
+
+We split the data into three sets: training, testing and validation. The training set will be used to fit a model; the testing set will be used report a model's effectiveness; and the validation set will be held until the end to evaluate our final model.
+
+```{r, include = F}
+# train-validation-test split
+N <- length(data$AD)
+n1 <- floor(0.7 * N)
+n2 <- floor(0.15 * N)
+
+set.seed(10)
+idx_train <- sample(N,n1)
+idx_no_train <- which(!seq(1:N) %in% idx_train)
+idx_test <- sample(idx_no_train, n2)
+idx_val <- which(!idx_no_train %in% idx_test)
+ 
+# identification information, i.e. encounter_id and patient_nbr, should not be included in the model
+data.train <- data[idx_train,] %>% select(-c(Subject.ID,MRI.ID))
+data.test <- data[idx_test,]  %>% select(-c(Subject.ID,MRI.ID))
+data.val <- data[idx_val,] %>% select(-c(Subject.ID,MRI.ID))
+```
 
 
-# Model Evaluation
+```{r, include = F}
+head(data.train)
+```
+
+
+
+## Model 1: LASSO Logistic Regression Model
+
+- Model Fit
+
+We first fit a logistic regression model. We selected a sparse model by using LASSO regularization technique. The criteria is set to be deviance and 10 fold Cross Validation is applied. 
+
+```{r, echo = F}
+X <- model.matrix(AD~., data.train)[,-1]
+Y <- data.train[,length(data.train)]
+
+set.seed(10)
+fit1.cv <- cv.glmnet(X, Y, alpha=1, family="binomial", nfolds = 10, type.measure = "deviance")
+plot(fit1.cv)
+```
+
+We first choose the set of variables which give the smallest deviance. The variables selected are: Gender, Age, EDUC, SES, MMSE, eTIV, nWBV, ASF.
+
+```{r, include = F}
+coef.1se <- coef(fit1.cv, s = "lambda.min")
+coef.1se <- coef.1se[which(coef.1se != 0),]
+vars <- rownames(as.matrix(coef.1se))
+vars
+```
+
+
+```{r, include = F}
+fit.logit.1 <- glm(AD~Gender+Age+EDUC+SES+MMSE+eTIV+nWBV+ASF, family=binomial, data=data.train)
+summary(fit.logit.1)
+```
+
+
+```{r, include = F}
+Anova(fit.logit.1)
+```
+
+- Fine Tuning
+
+We refit the model using backward selection to drop any variables with significance level p < 0.05. In the end, four variables remained, which are Gender, Age, MMSE, nWBV.
+
+```{r, include = F}
+
+fit.logit.final <- glm(AD~Gender+Age+MMSE+nWBV, family=binomial, data=data.train)
+summary(fit.logit.final)
+```
+
+- Analysis
+
+
+```{r, echo = F}
+
+fit.logit.final.roc <- roc(data.train$AD, fit.logit.final$fitted)
+
+plot(1-fit.logit.final.roc$specificities, fit.logit.final.roc$sensitivities, 
+     col = "red", lwd = 3, type = "l",
+    xlab = "False Positive",
+    ylab = "True Positive (Sensitivity)",
+    main = "Final Model: ROC Curve")
+
+legend("bottomright", c(paste0("AUC = ", round(fit.logit.final.roc$auc,2))),
+       col = c("red"))
+```
+
+
+Here, we simply assume that it costs equally to mislabel a subject to be AD as it does to mislabel a non-AD. Thus, we will choose the threshold to be 0.5.
+
+```{r, include = F}
+#use test dataset to estimate misclassification error
+fit.logit.final.test <- predict(fit.logit.final,data.test,type = "response")
+fitfinal.pred <- as.factor(ifelse(fit.logit.final.test > 1/2, "1", "0"))
+```
+
+```{r, include = F}
+cm.val <- table(fitfinal.pred, data.test$AD)
+cm.val
+```
+
+
+|     | $Y=0$ | $Y=1$ |
+|-------|-------|-------|
+| $\hat{Y}=0$ | 22 | 4 |
+| $\hat{Y}=1$ | 6 | 23 |
+
+
+## Model 2
+
+## Model 3
+
+## Final Model
+
+
 
 # Conclusion
+
+# Reference 
+
+Fulton, L.V.; Dolezel, D.; Harrop, J.; Yan, Y.; Fulton, C.P. Classification of Alzheimer’s Disease with and without Imagery Using Gradient Boosted Machines and ResNet-50. Brain Sci. 2019, 9, 212. https://doi.org/10.3390/brainsci9090212
