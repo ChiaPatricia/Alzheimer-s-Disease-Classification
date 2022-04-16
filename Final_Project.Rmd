@@ -148,7 +148,7 @@ Age does not pose a significant influence on the examination score and the diagn
 Two subjects are having significantly lower mini mental state examination score. They are also visiting the hospital very often.
 ```{r echo = F}
 data %>% 
-  ggplot(aes(x=MMSE,y=Age, color = AD, size = Visit*0.1)) +
+  ggplot(aes(x=MMSE,y=Age, color = AD, size = Visit)) +
   geom_jitter(alpha = 0.8) +
   labs(title = "Mini Mental State Examination Score, Age, Visit and AD diagnosis",
        x = "Mini Mental State Examination Score") +
@@ -158,7 +158,9 @@ data %>%
 ##TODO: more visualizations?
 
 
+
 # Feature engineering maybe?
+
 
 # V. Model Building
 
@@ -273,7 +275,8 @@ cm.val
 | $\hat{Y}=1$ | 6 | 23 |
 
 
-## Model 2 Random Forest
+## Model 2 Random Forest 
+## TODO: 要不要再加个用gini的
 
 Second model we built is a random forest model. We first set mtry to be equal to square root of p (10) and num.trees to be 500. We use default setting split criterion: misclassification error.
 
@@ -353,7 +356,39 @@ cm.val <- table(fit.rf.final.pred, data.test$AD)
 cm.val
 ```
 
-## Model 3 Deep Learning 
+## Model 3 Deep Learning 这个应该有点问题
+
+```{r}
+p = dim(X)[2]
+deep_model <- keras_model_sequential() %>%
+  layer_dense(units = 10, activation = "relu", input_shape = c(p)) %>% 
+  layer_dense(units = 2, activation = "softmax") # output
+
+deep_model %>% compile(
+  optimizer = "rmsprop",
+  loss = "sparse_categorical_crossentropy",
+  metrics = c("accuracy")
+)
+```
+
+```{r}
+fit.deep<- deep_model %>% fit(
+  X,
+  as.matrix(as.numeric(as.character(Y))),
+  epochs = 20,
+  validation_split = .15 # set 15% of the data3_xtain, data3_ytrain as the validation data
+)
+plot(fit.deep)
+```
+
+```{r}
+deep_model %>% fit(
+  X,
+  as.matrix(as.numeric(as.character(Y))),
+  epochs = 16,
+)
+deep_model%>% evaluate(model.matrix(AD~.,data.test)[,-1],as.matrix(as.integer(as.character(data.test$AD))))
+```
 
 ## Enesemble Model
  
