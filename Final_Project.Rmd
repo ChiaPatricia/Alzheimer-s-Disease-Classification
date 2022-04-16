@@ -193,8 +193,6 @@ head(data.train)
 
 ## Model 1: LASSO Logistic Regression Model
 
-##TODO: 要不要apply pca 一下
-
 - Model Fit
 
 We first fit a logistic regression model. We selected a sparse model by using LASSO regularization technique. The criteria is set to be deviance and 10 fold Cross Validation is applied. 
