@@ -6,10 +6,6 @@ author:
 - Yuqin Zhang
 - Zejia Cai
 output:
-  pdf_document:
-    number_sections: no
-    toc: no
-    toc_depth: '4'
   html_document:
     code_folding: show
     highlight: haddock
@@ -18,6 +14,10 @@ output:
     toc: yes
     toc_depth: 4
     toc_float: yes
+  pdf_document:
+    number_sections: no
+    toc: no
+    toc_depth: '4'
   word_document:
     toc: yes
     toc_depth: '4'
@@ -29,8 +29,10 @@ editor_options:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(fig.height=4, fig.width=6, warning = F)
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(data.table,randomForest, tree, ISLR, rpart, gbm, rpart.plot, caret, car, MASS, rattle, pROC, partykit, ggplot2, glmnet, leaps, dplyr, keras, neuralnet, imager, ranger, elasticnet,factoextra, stargazer)
+pacman::p_load(data.table,randomForest, tree, ISLR, rpart, gbm, rpart.plot, caret, car, MASS, rattle, pROC, partykit, ggplot2, glmnet, leaps, dplyr, keras, neuralnet, imager, ranger, elasticnet,factoextra, stargazer,keras)
 ```
+
+
 
 # I. Abstract
 
@@ -125,7 +127,7 @@ summary(data)
 
 
 
-## IV.Exploratory Data Analysis
+# IV.Exploratory Data Analysis
 
 ```{r echo = F}
 
@@ -147,7 +149,7 @@ Two subjects are having significantly lower mini mental state examination score.
 ```{r echo = F}
 data %>% 
   ggplot(aes(x=MMSE,y=Age, color = AD, size = Visit*0.1)) +
-  geom_jitter(alpha = 0.8) + 
+  geom_jitter(alpha = 0.8) +
   labs(title = "Mini Mental State Examination Score, Age, Visit and AD diagnosis",
        x = "Mini Mental State Examination Score") +
   theme_light()
@@ -190,6 +192,8 @@ head(data.train)
 
 
 ## Model 1: LASSO Logistic Regression Model
+
+##TODO: 要不要apply pca 一下
 
 - Model Fit
 
@@ -236,7 +240,6 @@ summary(fit.logit.final)
 
 - Analysis
 
-
 ```{r, echo = F}
 
 fit.logit.final.roc <- roc(data.train$AD, fit.logit.final$fitted)
@@ -272,10 +275,90 @@ cm.val
 | $\hat{Y}=1$ | 6 | 23 |
 
 
-## Model 2
+## Model 2 Random Forest
 
-## Model 3
+Second model we built is a random forest model. We first set mtry to be equal to square root of p (10) and num.trees to be 500. We use default setting split criterion: misclassification error.
 
+- Fine Tuning
+
+```{r, echo = F}
+set.seed(1)
+fit.rf <- randomForest(AD~., data.train, mtry = 3, 
+                    num.trees = 500)
+
+# Three curves of MCE of 1's, 0's and  overall.
+plot(fit.rf)
+legend("topright", colnames(fit.rf$err.rate), col=1:3, cex=0.8, fill=1:3)
+```
+
+By plotting the error rate vs number of trees, we find that 250 trees may be needed to settle the OOB testing errors.
+ 
+By setting `ntree=250`, we want to compare effects of different mtry.
+So we loop mtry from 1 to 10 and return the testing OOB errors for each of them
+In the end, we find that `mtry=4` gives the minimum error rate.
+
+```{r, echo = F}
+set.seed(1)
+rf.error <- 1:10  
+for (p in 1:10)  
+{
+  fit.rf <- randomForest(AD~., data.train, mtry = p, 
+                    num.trees = 250)
+  rf.error[p] <- fit.rf$err.rate[250]  # collecting oob error rate based on 250 trees
+}
+# rf.error   
+
+plot(1:10, rf.error, pch=16,
+     main = "Testing errors of mtry with 250 trees",
+     xlab="mtry",
+     ylab="OOB mse of mtry")
+lines(1:10, rf.error)
+```
+
+- Analysis
+
+```{r, echo = F}
+fit.rf.final <- randomForest(AD~., data.train, mtry = 4, 
+                    num.trees = 250,importance = T)
+varImpPlot(fit.rf.final)
+
+```
+
+From the above plot, we get to know that the MMSE is the most important variable in this model.
+
+```{r, include = F}
+fit.rf.final.prob <-predict(fit.rf.final, data.test, type = 'prob')
+fit.rf.final.pred<-as.factor(ifelse(fit.rf.final.prob[,2]>1/2, "1", "0"))
+fit.rf.test.err <-mean(data.test$AD != fit.rf.final.pred)
+fit.rf.test.err
+```
+
+```{r, include = F}
+fit.rf.final.roc <- roc(data.test$AD, fit.rf.final.prob[,2])
+
+plot(1-fit.rf.final.roc$specificities, fit.rf.final.roc$sensitivities, 
+     col = "red", lwd = 3, type = "l",
+    xlab = "False Positive",
+    ylab = "True Positive (Sensitivity)",
+    main = "Final Model: ROC Curve")
+
+legend("bottomright", c(paste0("AUC = ", round(fit.rf.final.roc$auc,2))),
+       col = c("red"))
+```
+
+
+Using 1/2 as threshold to determine the class of the instances in the test dataset, the misclassification rate is 0.145.
+and AUC is 0.91. The confusion matrix is showing below and we can see that the model's ability to predict positive class or negative class is balanced.
+
+```{r, echo = F}
+cm.val <- table(fit.rf.final.pred, data.test$AD)
+cm.val
+```
+
+## Model 3 Deep Learning 
+
+## Enesemble Model
+ 
 ## Final Model
 
 
