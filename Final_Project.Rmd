@@ -72,43 +72,77 @@ Atlas scaling factor (ASF): This is a volume-scaling factor that standardizes th
 
 MR Delay: A delayed MR is performed a few minutes after the injection of the contrast agent. The delayed contrast enhancement might reveal different biological information.
 
-Clinical Dementia Rating: This is a globally accepted measure of the overall severity of dementia.
+Clinical Dementia Rating: This is a globally accepted measure of the overall severity of dementia. The score has the following 5 values:
 
+0 - Normal
+
+0.5 - Very Mild Dementia
+
+1 - Mild Dementia
+
+2 - Moderate Demantia
+
+3 - Severe Demantia
+
+
+## Target Value
+
+We will predict whether a patient has developed dementia based on the Clinical Dementia Rating. If a patient has CDR score = 0, the subject has no AD, thus receiving a label 0. If the score > 0, the subject has developed AD, thus will be marked with 1.
 
 # III. Data Cleaning and Preparation
+```{r}
+data_cross <- read.csv("data/oasis_cross-sectional.csv")
+data_cross <- data_cross %>% select(-c(Hand, Delay))
+colnames(data_cross)[which(names(data_cross) == "Educ")] <- "EDUC"
+head(data_cross)
+```
 
 
 ```{r, include = F}
-data <- read.csv("data/oasis_longitudinal.csv")
+data_long <- read.csv("data/oasis_longitudinal.csv")
 
 # hand only has one unique value. 
 # Group has 3 categories: nondemented, demented, converted. Not interested in converted. Will create our own label.
-data <- data %>% select(-c(Hand,Group))
-head(data)
+data_long <- data_long %>% select(-c(Hand,Group,Subject.ID,Visit, MR.Delay))
+colnames(data_long)[which(names(data_long) == "MRI.ID")] <- "ID"
+head(data_long)
 ```
-```{r, include = F}
+
+
+```{r}
+data <- rbind(data_cross, data_long)
+
 ## check the number of columns which have missing values
-
-# SES has 19 missing values. MMSE has 2 missing values. 
-names(data)[apply(data, 2, function(x) any(is.na(x)))]
-sum(is.na(data$MMSE))
-sum(is.na(data$SES))
+names(data)[apply(data, 2, function(x) any(is.na(x)))] # "EDUC" "SES"  "MMSE" "CDR" 
+sum(is.na(data$EDUC)) # 201
+sum(is.na(data$MMSE)) # 203
+sum(is.na(data$SES)) # 239
+sum(is.na(data$CDR)) # 201
 ```
 
+```{r}
 
-```{r, include = F}
+# CDR is the target value. Drop columns where CDR is empty. Fill NA for the other three variables.
+data <- data[!is.na(data$CDR),]
+# EDUC: 18 different possible values, fill NA with mode
+table(data$EDUC)
+data[is.na(data$EDUC),"EDUC"] <- 12
+
+
+
 # column "SES" refers to social-economic status. It's a categorical variable. fill NA with the mode
 table(data$SES)
 data[is.na(data$SES),"SES"] <- 2
-table(data$SES)
-```
 
-```{r, include = F}
+
+
 # column "MMSE" refers to mini-mental state exam score, fill NA with mean
 unique(data$MMSE)
 mean(na.omit(data$MMSE))
 data[is.na(data$MMSE),"MMSE"] <- 27
 ```
+
+
 
 ```{r, include = F}
 # change gender to factor. recode
@@ -130,7 +164,6 @@ summary(data)
 # IV.Exploratory Data Analysis
 
 ```{r echo = F}
-
 data %>% 
   ggplot(aes(x=Age, fill = Gender)) +
   geom_bar(position='dodge') +
@@ -148,9 +181,9 @@ Age does not pose a significant influence on the examination score and the diagn
 Two subjects are having significantly lower mini mental state examination score. They are also visiting the hospital very often.
 ```{r echo = F}
 data %>% 
-  ggplot(aes(x=MMSE,y=Age, color = AD, size = Visit)) +
+  ggplot(aes(x=MMSE,y=Age, color = AD, size = 2)) +
   geom_jitter(alpha = 0.8) +
-  labs(title = "Mini Mental State Examination Score, Age, Visit and AD diagnosis",
+  labs(title = "Mini Mental State Examination Score, Age and AD diagnosis",
        x = "Mini Mental State Examination Score") +
   theme_light()
 ```
@@ -181,23 +214,22 @@ idx_test <- sample(idx_no_train, n2)
 idx_val <- which(!idx_no_train %in% idx_test)
  
 # identification information, i.e. encounter_id and patient_nbr, should not be included in the model
-data.train <- data[idx_train,] %>% select(-c(Subject.ID,MRI.ID))
-data.test <- data[idx_test,]  %>% select(-c(Subject.ID,MRI.ID))
-data.val <- data[idx_val,] %>% select(-c(Subject.ID,MRI.ID))
+data.train <- data[idx_train,] %>% select(-c(ID))
+data.test <- data[idx_test,]  %>% select(-c(ID))
+data.val <- data[idx_val,] %>% select(-c(ID))
+
+
+# scale training set
+# data.train[, !names(data.train) %in% c("Gender", "AD")] <- scale(data.train[, !names(data.train) %in% c("Gender", "AD")], center = TRUE, scale = TRUE)
 ```
-
-
-```{r, include = F}
-head(data.train)
-```
-
-
 
 ## Model 1: LASSO Logistic Regression Model
 
 - Model Fit
 
-We first fit a logistic regression model. We selected a sparse model by using LASSO regularization technique. The criteria is set to be deviance and 10 fold Cross Validation is applied. 
+We first fit a logistic regression model. We selected a sparse model by using LASSO regularization technique. We used **cv.glmnet()** function to implement cross validation.
+
+The criteria is set to be deviance and 10-fold Cross Validation is applied. We chose the set of variables which give the smallest cross-validated error. The variables selected are: Gender, Age, EDUC, SES, MMSE, eTIV and nWBV.
 
 ```{r, echo = F}
 X <- model.matrix(AD~., data.train)[,-1]
@@ -208,9 +240,8 @@ fit1.cv <- cv.glmnet(X, Y, alpha=1, family="binomial", nfolds = 10, type.measure
 plot(fit1.cv)
 ```
 
-We first choose the set of variables which give the smallest deviance. The variables selected are: Gender, Age, EDUC, SES, MMSE, eTIV, nWBV, ASF.
 
-```{r, include = F}
+```{r}
 coef.1se <- coef(fit1.cv, s = "lambda.min")
 coef.1se <- coef.1se[which(coef.1se != 0),]
 vars <- rownames(as.matrix(coef.1se))
@@ -218,44 +249,46 @@ vars
 ```
 
 
-```{r, include = F}
-fit.logit.1 <- glm(AD~Gender+Age+EDUC+SES+MMSE+eTIV+nWBV+ASF, family=binomial, data=data.train)
-summary(fit.logit.1)
+```{r}
+fit.logit <- glm(AD~Gender+ Age + EDUC + SES + MMSE + eTIV + nWBV, family=binomial, data=data.train)
+summary(fit.logit)
 ```
 
 
-```{r, include = F}
-Anova(fit.logit.1)
-```
 
 - Fine Tuning
 
-We refit the model using backward selection to drop any variables with significance level p < 0.05. In the end, four variables remained, which are Gender, Age, MMSE, nWBV.
+Based on this model, we refit the model using backward selection to drop any variables with significance level p < 0.05. In the end, only three variables remained, which are Gender, MMSE and nWBV. In fact, this is the same set of variable that corresponds to the largest value of $\lambda$ such that the cross-validated error is within 1 standard error of the minimum cross-validated error.
 
-```{r, include = F}
-
-fit.logit.final <- glm(AD~Gender+Age+MMSE+nWBV, family=binomial, data=data.train)
+```{r}
+fit.logit.final <- glm(AD~Gender+ MMSE + nWBV, family=binomial, data=data.train)
 summary(fit.logit.final)
 ```
 
 - Analysis
 
-```{r, echo = F}
+Based on the summary table of the model, the logit function is given by:
+$$
+\begin{align}
+logit(P(AD=1 \mid Gender, MMSE, nWBV)) 
+&= log(\frac{P(AD=1 \mid Gender, MMSE, nWBV)}{P(AD=0 \mid Gender, MMSE, nWBV)}) \nonumber\\
+&= 36.38 + 0.82 \cdot Gender(Male) - 0.95 \cdot MMSE - 14.11 \cdot nWBV
+\end{align}
+$$
 
-fit.logit.final.roc <- roc(data.train$AD, fit.logit.final$fitted)
+where
+$$
+\begin{split}
+P(AD=1 \mid Gender, MMSE, nWBV) = \frac{exp(36.38 + 0.82 \cdot Gender(Male) - 0.95 \cdot MMSE - 14.11 \cdot nWBV)}{1 + exp(36.38 + 0.82 \cdot Gender(Male) - 0.95 \cdot MMSE - 14.11 \cdot nWBV)}
+\end{split}
+$$
 
-plot(1-fit.logit.final.roc$specificities, fit.logit.final.roc$sensitivities, 
-     col = "red", lwd = 3, type = "l",
-    xlab = "False Positive",
-    ylab = "True Positive (Sensitivity)",
-    main = "Final Model: ROC Curve")
+Here, we will assume that it costs equally to mislabel a subject to be AD as it does to mislabel a non-AD. Thus, we will set the threshold to be 0.5. That is, 
 
-legend("bottomright", c(paste0("AUC = ", round(fit.logit.final.roc$auc,2))),
-       col = c("red"))
-```
+$$
+\hat{AD} = 1 \text{ if  } \hat P(AD=1 \mid Gender, MMSE, nWBV) > 0.5
+$$
 
-
-Here, we simply assume that it costs equally to mislabel a subject to be AD as it does to mislabel a non-AD. Thus, we will choose the threshold to be 0.5.
 
 ```{r, include = F}
 #use test dataset to estimate misclassification error
@@ -263,16 +296,59 @@ fit.logit.final.test <- predict(fit.logit.final,data.test,type = "response")
 fitfinal.pred <- as.factor(ifelse(fit.logit.final.test > 1/2, "1", "0"))
 ```
 
-```{r, include = F}
-cm.val <- table(fitfinal.pred, data.test$AD)
-cm.val
+
+
+
+Using the test data to make classifications based on the above-mentioned criteria, we obtained the following confusion matrix.
+
+```{r}
+cm.test <- table(fitfinal.pred, data.test$AD)
+cm.test
 ```
 
 
 |     | $Y=0$ | $Y=1$ |
 |-------|-------|-------|
-| $\hat{Y}=0$ | 22 | 4 |
-| $\hat{Y}=1$ | 6 | 23 |
+| $\hat{Y}=0$ | 41 | 11 |
+| $\hat{Y}=1$ | 7 | 32 |
+
+
+The misclassification error rate is 0.198.
+```{r}
+log.error.test <- mean(fitfinal.pred != data.test$AD)
+log.error.test
+```
+
+```{r}
+sensitivity <- cm.test[2,2]/sum(cm.test[,2])
+sensitivity
+
+specificity <- cm.test[1,1]/sum(cm.test[,1])
+specificity
+
+fdr <- cm.test[2,1] / sum(cm.test[2,]) # false discovery rate
+fdr
+
+positive.pred <- cm.test[2,2] / sum(cm.test[2,]) # positive prediction
+positive.pred
+```
+
+
+```{r, echo = F}
+
+# fit.logit.final.roc <- roc(data.train$AD, fit.logit.final$fitted)
+# fit.logit.final.roc <- roc(data.test$AD, fitfinal.pred)
+
+plot(1-fit.logit.final.roc$specificities, fit.logit.final.roc$sensitivities, 
+     col = "red", lwd = 3, type = "l",
+    xlab = "False Positive",
+    ylab = "True Positive (Sensitivity)",
+    main = "Logistic Regression Model: ROC Curve")
+
+legend("bottomright", c(paste0("AUC = ", round(fit.logit.final.roc$auc,2))),
+       col = c("red"))
+```
+
 
 
 ## Model 2 Random Forest 
@@ -280,7 +356,8 @@ cm.val
 
 Second model we built is a random forest model. We first set mtry to be equal to square root of p (10) and num.trees to be 500. We use default setting split criterion: misclassification error.
 
-- Fine Tuning
+- Tuning Parameters
+Using the randomForest()
 
 ```{r, echo = F}
 set.seed(1)
@@ -296,7 +373,7 @@ By plotting the error rate vs number of trees, we find that 250 trees may be nee
  
 By setting `ntree=250`, we want to compare effects of different mtry.
 So we loop mtry from 1 to 10 and return the testing OOB errors for each of them
-In the end, we find that `mtry=4` gives the minimum error rate.
+In the end, we decide to use `mtry=2` which gives the minimum error rate.
 
 ```{r, echo = F}
 set.seed(1)
@@ -319,7 +396,8 @@ lines(1:10, rf.error)
 - Analysis
 
 ```{r, echo = F}
-fit.rf.final <- randomForest(AD~., data.train, mtry = 4, 
+set.seed(1)
+fit.rf.final <- randomForest(AD~., data.train, mtry = 2, 
                     num.trees = 250,importance = T)
 varImpPlot(fit.rf.final)
 
@@ -334,7 +412,7 @@ fit.rf.test.err <-mean(data.test$AD != fit.rf.final.pred)
 fit.rf.test.err
 ```
 
-```{r, include = F}
+```{r}
 fit.rf.final.roc <- roc(data.test$AD, fit.rf.final.prob[,2])
 
 plot(1-fit.rf.final.roc$specificities, fit.rf.final.roc$sensitivities, 
@@ -348,20 +426,28 @@ legend("bottomright", c(paste0("AUC = ", round(fit.rf.final.roc$auc,2))),
 ```
 
 
-Using 1/2 as threshold to determine the class of the instances in the test dataset, the misclassification rate is 0.145.
-and AUC is 0.91. The confusion matrix is showing below and we can see that the model's ability to predict positive class or negative class is balanced.
+Using 1/2 as threshold to determine the class of the instances in the test dataset, the misclassification rate is 0.131.
+and AUC is 0.95. The confusion matrix is showing below and we can see that the model's ability to predict positive class or negative class is balanced.
 
 ```{r, echo = F}
 cm.val <- table(fit.rf.final.pred, data.test$AD)
 cm.val
 ```
 
+|     | $Y=0$ | $Y=1$ |
+|-------|-------|-------|
+| $\hat{Y}=0$ | 43 | 7 |
+| $\hat{Y}=1$ | 5 | 36 |
+
+
+
 ## Model 3 Deep Learning 这个应该有点问题
 
 ```{r}
 p = dim(X)[2]
 deep_model <- keras_model_sequential() %>%
-  layer_dense(units = 10, activation = "relu", input_shape = c(p)) %>% 
+  layer_dense(units = 16, activation = "relu", input_shape = c(p)) %>% 
+  layer_dropout(0.5) %>% 
   layer_dense(units = 2, activation = "softmax") # output
 
 deep_model %>% compile(
@@ -372,23 +458,37 @@ deep_model %>% compile(
 ```
 
 ```{r}
-fit.deep<- deep_model %>% fit(
+fit.deep <- deep_model %>% fit(
   X,
   as.matrix(as.numeric(as.character(Y))),
-  epochs = 20,
+  epochs = 100,
   validation_split = .15 # set 15% of the data3_xtain, data3_ytrain as the validation data
 )
+
 plot(fit.deep)
 ```
+
+
 
 ```{r}
 deep_model %>% fit(
   X,
   as.matrix(as.numeric(as.character(Y))),
-  epochs = 16,
+  epochs = 50,
 )
 deep_model%>% evaluate(model.matrix(AD~.,data.test)[,-1],as.matrix(as.integer(as.character(data.test$AD))))
 ```
+
+```{r}
+pred.prob <- deep_model %>% predict(data.test)
+pred.prob
+```
+
+```{r}
+data.test[,]
+```
+
+
 
 ## Enesemble Model
  
@@ -401,3 +501,5 @@ deep_model%>% evaluate(model.matrix(AD~.,data.test)[,-1],as.matrix(as.integer(as
 # Reference 
 
 Fulton, L.V.; Dolezel, D.; Harrop, J.; Yan, Y.; Fulton, C.P. Classification of Alzheimer’s Disease with and without Imagery Using Gradient Boosted Machines and ResNet-50. Brain Sci. 2019, 9, 212. https://doi.org/10.3390/brainsci9090212
+
+Knight Alzheimer Disease Research Center, CDR Scoring Table: https://knightadrc.wustl.edu/professionals-clinicians/cdr-dementia-staging-instrument/cdr-scoring-table/
