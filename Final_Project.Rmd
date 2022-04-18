@@ -90,9 +90,16 @@ Clinical Dementia Rating: This is a globally accepted measure of the overall sev
 We will predict whether a patient has developed dementia based on the Clinical Dementia Rating. If a patient has CDR score = 0, the subject has no AD, thus receiving a label 0. If the score > 0, the subject has developed AD, thus will be marked with 1.
 
 # III. Data Cleaning and Preparation
+
+We combine the cross sectional dataset with the longitudinal dataset.
+
 ```{r}
 data_cross <- read.csv("data/oasis_cross-sectional.csv")
+
+# all subjects are right-handed. Delay is all empty
 data_cross <- data_cross %>% select(-c(Hand, Delay))
+
+# to match the name of data_long
 colnames(data_cross)[which(names(data_cross) == "Educ")] <- "EDUC"
 head(data_cross)
 ```
@@ -103,6 +110,7 @@ data_long <- read.csv("data/oasis_longitudinal.csv")
 
 # hand only has one unique value. 
 # Group has 3 categories: nondemented, demented, converted. Not interested in converted. Will create our own label.
+# Visit, MR.Delay information are not contained in data_cross
 data_long <- data_long %>% select(-c(Hand,Group,Subject.ID,Visit, MR.Delay))
 colnames(data_long)[which(names(data_long) == "MRI.ID")] <- "ID"
 head(data_long)
@@ -110,6 +118,7 @@ head(data_long)
 
 
 ```{r}
+# combine data_cross and data_long
 data <- rbind(data_cross, data_long)
 
 ## check the number of columns which have missing values
@@ -128,13 +137,9 @@ data <- data[!is.na(data$CDR),]
 table(data$EDUC)
 data[is.na(data$EDUC),"EDUC"] <- 12
 
-
-
 # column "SES" refers to social-economic status. It's a categorical variable. fill NA with the mode
 table(data$SES)
 data[is.na(data$SES),"SES"] <- 2
-
-
 
 # column "MMSE" refers to mini-mental state exam score, fill NA with mean
 unique(data$MMSE)
