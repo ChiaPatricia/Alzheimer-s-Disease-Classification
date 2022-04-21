@@ -586,7 +586,9 @@ fit.gbm.pred <- predict(object = fit.gbm.final,
 
 fit.gbm.pred1 <- ifelse(fit.gbm.pred >= 1, "1", "0")
 # fit.gbm.pred2 <- ifelse(fit.gbm.pred >= 1/2, "1", "0")
-
+# fit.gbm.pred3 <- ifelse(fit.gbm.pred == 0, "0", "1")
+fit.gbm.test.error <- mean(data.test$AD != fit.gbm.pred1)
+fit.gbm.test.error
 # caret::RMSE(fit.gbm.pred1, data.test$AD)
 table(fit.gbm.pred1,data.test$AD)
 ```
