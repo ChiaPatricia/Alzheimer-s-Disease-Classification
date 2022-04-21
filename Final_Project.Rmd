@@ -519,6 +519,10 @@ hyper_grid <- expand.grid(shrinkage = c(.0075, .01, .0125, .015, .0175, .02, .02
 nrow(hyper_grid)
 ```
 Instead of performing 10-fold cross validation, we can speed up our tuning process by training on 75% of the training dataset and evaluate performance on the remaining 25%.
+
+# !!! DO NOT RUN TAKE A VELI VELI LONG TIME 
+# `load('hyper_grid.RData')` DIRECTLY
+
 ```{r}
 random_index <- sample(1:nrow(data.train), nrow(data.train))
 random_train <- data.train[random_index, ]
