@@ -341,7 +341,7 @@ positive.pred
 
 ```{r, echo = F}
 
-# fit.logit.final.roc <- roc(data.train$AD, fit.logit.final$fitted)
+fit.logit.final.roc <- roc(data.train$AD, fit.logit.final$fitted)
 # fit.logit.final.roc <- roc(data.test$AD, fitfinal.pred)
 
 plot(1-fit.logit.final.roc$specificities, fit.logit.final.roc$sensitivities, 
@@ -464,10 +464,10 @@ print(fit.gbm)
 summary(fit.gbm)
 ```
 
-The best cross-validation iteration was 5970
-There were 10 predictors of which 10 had non-zero influence.
+The best cross-validation iteration was 8025.
+There were 8 predictors of which 8 had non-zero influence.
 
-Here, we see that the minimum CV RMSE is 0.3552643 (this means on average our model is about 0.3552643 off from the actual AD diagnosis) but the plot also illustrates that the CV error is still decreasing at 4012 trees.
+Here, we see that the minimum CV RMSE is 0.3474829 (this means on average our model is about 0.3474829 off from the actual AD diagnosis) but the plot also illustrates that the CV error is still decreasing at 8025 trees.
 ```{r}
 # get MSE and compute RMSE
 sqrt(min(fit.gbm$cv.error))
@@ -505,10 +505,10 @@ gbm.perf(fit.gbm1, method = "cv")
 ```
 We then used the grid search method, which iterates over every possible combination of hyperparameter values and allows us to determine which combination performs best.
 
-To conduct a manual grid search, we first create a grid of hyperparameter combinations. We'll look at 81 models with different learning rates and tree depths.
+To conduct a manual grid search, we first create a grid of hyperparameter combinations. We'll look at 270 models with different learning rates and tree depths.
 ```{r}
 # create hyperparameter grid
-hyper_grid <- expand.grid(shrinkage = c(.001, .01, .1),
+hyper_grid <- expand.grid(shrinkage = c(.0075, .01, .0125, .015, .0175, .02, .0225, .025, .0275, .03),
                           interaction.depth = c(1, 3, 5),
                           n.minobsinnode = c(5, 10, 15),
                           bag.fraction = c(.65, .8, 1), 
@@ -547,7 +547,12 @@ hyper_grid %>%
     dplyr::arrange(min_RMSE) %>%
     head(10)
 ```
-Our best model is with an RMSE of 0.1806114, which is much better than our first model's.
+```{r,include=FALSE}
+# save(hyper_grid,file='hyper_grid.RData')
+load('hyper_grid.RData')
+```
+
+Our best model is with an RMSE of 0.2964739, which is much better than our first model's.
 
 ```{r}
 # for reproducibility
@@ -557,11 +562,11 @@ set.seed(123)
 fit.gbm.final <- gbm(AD~ .,
                     distribution = "gaussian",
                     data = data.train,
-                    n.trees = 62,
-                    interaction.depth = 3,
-                    shrinkage = 0.05,
-                    n.minobsinnode = 10,
-                    bag.fraction = .80, 
+                    n.trees = 1462,
+                    interaction.depth = 5,
+                    shrinkage = 0.0125,
+                    n.minobsinnode = 5,
+                    bag.fraction = 1, 
                     train.fraction = .75,
                     n.cores = NULL, 
                     verbose = FALSE)  
