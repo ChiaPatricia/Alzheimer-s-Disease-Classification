@@ -444,9 +444,148 @@ cm.val
 | $\hat{Y}=0$ | 43 | 7 |
 | $\hat{Y}=1$ | 5 | 36 |
 
+## Model 3: Gradient Boosting
 
+We then applied a gradient boosted model with gaussian loss function and 10000 iterations were performed.
+```{r}
+# for reproducibility
+set.seed(123)
 
-## Model 3 Deep Learning 这个应该有点问题
+# train GBM model
+fit.gbm <- gbm(AD~., distribution = "gaussian", 
+                data = data.train,
+                n.trees = 10000, 
+                interaction.depth = 1, 
+                shrinkage = 0.001,
+                cv.folds = 10, 
+                verbose = FALSE, 
+                n.cores = NULL)
+print(fit.gbm)
+summary(fit.gbm)
+```
+
+The best cross-validation iteration was 5970
+There were 10 predictors of which 10 had non-zero influence.
+
+Here, we see that the minimum CV RMSE is 0.3552643 (this means on average our model is about 0.3552643 off from the actual AD diagnosis) but the plot also illustrates that the CV error is still decreasing at 4012 trees.
+```{r}
+# get MSE and compute RMSE
+sqrt(min(fit.gbm$cv.error))
+gbm.perf(fit.gbm, method = "cv")
+min_MSE <- which.min(fit.gbm$cv.error)
+min_MSE
+```
+
+- Tuning parameter
+
+```{r,include=FALSE}
+# By increase the learning rate to take larger steps down the gradient descent, reduce the number of trees (since we are reducing the learning rate), and increase the depth of each tree from using a single split to 2 splits. This model achieves a slightly lower RMSE than our initial model with only 327 trees.
+# for reproducibility
+set.seed(123)
+
+# train GBM model
+fit.gbm1 <- gbm(AD~., distribution = "gaussian", 
+                data = data.train,
+                n.trees = 5000,
+                interaction.depth = 2,
+                shrinkage = 0.01,
+                cv.folds = 10,
+                n.cores = NULL, 
+                verbose = FALSE)  
+print(fit.gbm1)
+summary(fit.gbm1)
+# find index for n trees with minimum CV error
+min_MSE1 <- which.min(fit.gbm1$cv.error)
+min_MSE1
+# get MSE and compute RMSE
+sqrt(fit.gbm1$cv.error[min_MSE1])
+
+# plot loss function as a result of n trees added to the ensemble
+gbm.perf(fit.gbm1, method = "cv")
+```
+We then used the grid search method, which iterates over every possible combination of hyperparameter values and allows us to determine which combination performs best.
+
+To conduct a manual grid search, we first create a grid of hyperparameter combinations. We'll look at 81 models with different learning rates and tree depths.
+```{r}
+# create hyperparameter grid
+hyper_grid <- expand.grid(shrinkage = c(.001, .01, .1),
+                          interaction.depth = c(1, 3, 5),
+                          n.minobsinnode = c(5, 10, 15),
+                          bag.fraction = c(.65, .8, 1), 
+                          optimal_trees = 0,
+                          min_RMSE = 0)
+
+# total number of combinations
+nrow(hyper_grid)
+```
+Instead of performing 10-fold cross validation, we can speed up our tuning process by training on 75% of the training dataset and evaluate performance on the remaining 25%.
+```{r}
+random_index <- sample(1:nrow(data.train), nrow(data.train))
+random_train <- data.train[random_index, ]
+
+# grid search 
+for(i in 1:nrow(hyper_grid)) {
+    # reproducibility
+    set.seed(123)
+    
+    # train model
+    fit.gbm.tune <- gbm(AD~.,distribution = "gaussian",
+                    data = random_train,n.trees = 5000,
+                    interaction.depth = hyper_grid$interaction.depth[i],
+                    shrinkage = hyper_grid$shrinkage[i],
+                    n.minobsinnode = hyper_grid$n.minobsinnode[i],
+                    bag.fraction = hyper_grid$bag.fraction[i],
+                    train.fraction = .75, # speed up
+                    n.cores = NULL,
+                    verbose = FALSE)
+    # add min training error and trees to grid
+    hyper_grid$optimal_trees[i] <- which.min(fit.gbm.tune$valid.error)
+    hyper_grid$min_RMSE[i] <- sqrt(min(fit.gbm.tune$valid.error))
+  }
+
+hyper_grid %>% 
+    dplyr::arrange(min_RMSE) %>%
+    head(10)
+```
+Our best model is with an RMSE of 0.1806114, which is much better than our first model's.
+
+```{r}
+# for reproducibility
+set.seed(123)
+
+# train final model
+fit.gbm.final <- gbm(AD~ .,
+                    distribution = "gaussian",
+                    data = data.train,
+                    n.trees = 62,
+                    interaction.depth = 3,
+                    shrinkage = 0.05,
+                    n.minobsinnode = 10,
+                    bag.fraction = .80, 
+                    train.fraction = .75,
+                    n.cores = NULL, 
+                    verbose = FALSE)  
+# print(fit.gbm.final)
+summary(fit.gbm.final,
+        cBars = 10,
+        method = relative.influence, 
+        las = 2)
+```
+- Predict
+
+```{r}
+fit.gbm.pred <- predict(object = fit.gbm.final, 
+                        data.test,
+                        type = "response",
+                        fit.gbm.final$n.trees)
+
+fit.gbm.pred <- ifelse(fit.gbm.pred >= 1, "1", "0")
+
+# caret::RMSE(fit.gbm.pred, data.test$AD)
+table(fit.gbm.pred,data.test$AD)
+```
+
+## Model 4 Deep Learning 这个应该有点问题
 
 ```{r}
 p = dim(X)[2]
