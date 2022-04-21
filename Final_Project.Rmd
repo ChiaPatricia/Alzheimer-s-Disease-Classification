@@ -584,11 +584,19 @@ fit.gbm.pred <- predict(object = fit.gbm.final,
                         type = "response",
                         fit.gbm.final$n.trees)
 
-fit.gbm.pred <- ifelse(fit.gbm.pred >= 1, "1", "0")
+fit.gbm.pred1 <- ifelse(fit.gbm.pred >= 1, "1", "0")
+# fit.gbm.pred2 <- ifelse(fit.gbm.pred >= 1/2, "1", "0")
 
-# caret::RMSE(fit.gbm.pred, data.test$AD)
-table(fit.gbm.pred,data.test$AD)
+# caret::RMSE(fit.gbm.pred1, data.test$AD)
+table(fit.gbm.pred1,data.test$AD)
 ```
+
+|           | $Y=0$ | $Y=1$ |
+|-----------|-------|-------|
+|$\hat{Y}=0$|  11   |   1   |
+|$\hat{Y}=1$|  37   |   42  |
+
+
 
 ## Model 4 Deep Learning 这个应该有点问题
 
