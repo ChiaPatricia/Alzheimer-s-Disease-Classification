@@ -6,6 +6,10 @@ author:
 - Yuqin Zhang
 - Zejia Cai
 output:
+  pdf_document:
+    number_sections: no
+    toc: no
+    toc_depth: '4'
   html_document:
     code_folding: show
     highlight: haddock
@@ -14,16 +18,13 @@ output:
     toc: yes
     toc_depth: 4
     toc_float: yes
-  pdf_document:
-    number_sections: no
-    toc: no
-    toc_depth: '4'
   word_document:
     toc: yes
     toc_depth: '4'
 urlcolor: blue
 editor_options: 
   chunk_output_type: inline
+always_allow_html: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -93,7 +94,7 @@ We will predict whether a patient has developed dementia based on the Clinical D
 
 We combine the cross sectional dataset with the longitudinal dataset.
 
-```{r}
+```{r, include = F}
 data_cross <- read.csv("data/oasis_cross-sectional.csv")
 
 # all subjects are right-handed. Delay is all empty
@@ -117,7 +118,7 @@ head(data_long)
 ```
 
 
-```{r}
+```{r, include = F}
 # combine data_cross and data_long
 data <- rbind(data_cross, data_long)
 
@@ -129,7 +130,7 @@ sum(is.na(data$SES)) # 239
 sum(is.na(data$CDR)) # 201
 ```
 
-```{r}
+```{r, include = F}
 
 # CDR is the target value. Drop columns where CDR is empty. Fill NA for the other three variables.
 data <- data[!is.na(data$CDR),]
@@ -271,11 +272,11 @@ summary(fit.logit.final)
 
 Based on the summary table of the model, the logit function is given by:
 $$
-\begin{align}
+\begin{split}
 logit(P(AD=1 \mid Gender, MMSE, nWBV)) 
 &= log(\frac{P(AD=1 \mid Gender, MMSE, nWBV)}{P(AD=0 \mid Gender, MMSE, nWBV)}) \nonumber\\
 &= 36.38 + 0.82 \cdot Gender(Male) - 0.95 \cdot MMSE - 14.11 \cdot nWBV
-\end{align}
+\end{split}
 $$
 
 where
@@ -430,14 +431,14 @@ The plot below demonstrates the distribution of minimal depth among all the tree
 
 We can see that MMSE and nWBV are more likely to be the root of the tree compared to other variables. The average minimal depths of MMSE and nWBV are around 1.5, suggesting that many dementia observations can be separated effectively on the basis of these two variables.
 
-```{r}
-min_depth <- min_depth_distribution(fit.rf.final)
+```{r, include = F}
+# min_depth <- min_depth_distribution(fit.rf.final)
 # save(min_depth, file = "RData/min_depth.rda")
 load("RData/min_depth.rda")
 plot_min_depth_distribution(min_depth)
 ```
 
-```{r}
+```{r, include = F}
 # importance_frame <- measure_importance(fit.rf.final)
 # plot_multi_way_importance(importance_frame, size_measure = "p_value")
 ```
@@ -455,7 +456,7 @@ We use the grid search method which iterates over many possible combinations of 
 In the case of gradient boosting, the `distribution` is set to be `multinomial`. We then look at 135 models with various combinations of learning rate, tree numbers, tree depth and minimum number of observations in the end node. We apply 10-fold cross validation and record the minimum cross validated error for each of the model. 
 
 
-```{r, eval = F}
+```{r, eval = F, include = F}
 ## DO NOT RUNNNNNNNNN
 ## Gradient Boosting
 hyper_grid <- expand.grid(shrinkage = c(.0075, .01, .0125, .015, .0175),
@@ -538,7 +539,7 @@ xgb.cv.result = xgb.cv(data=dtrain, params = params, nrounds = 500,
 ```
 
 
-```{r, eval = F}
+```{r, eval = F, include = F}
 ## DO NOT RUNNNNNNNNN
 set.seed(1)
 # ntrees = xgb.cv.result$best_iteration
@@ -570,7 +571,7 @@ xgb.tuned$bestTune
 
 ### Analysis
 
-For the gradient boosting model, 
+The final gradient boosting model gives an error rate of 0.187. The final extreme gradient boosting model gives an error rate of 0.165.
 
 ```{r, include = F}
 # gradient boosting result
@@ -594,8 +595,6 @@ xgb.error
 
 
 
-
-
 - Predict
 
 
@@ -608,18 +607,19 @@ xgb.error
 ### Findings
 
 
-```{r}
+```{r, include = F}
 xgb.plot.tree(model = xgb.tuned$finalModel, trees = 1)
 ```
 
 
-```{r}
+```{r, include = F}
 xgb.importance(model=xgb.tuned$finalModel)
 ```
 
-## Enesemble Model
 
-```{r, echo = F}
+
+## Final Model
+```{r, include = F, eval = F}
 
 fit.logit.final.roc <- roc(data.train$AD, fit.logit.final$fitted)
 # fit.logit.final.roc <- roc(data.test$AD, fitfinal.pred)
@@ -634,7 +634,7 @@ legend("bottomright", c(paste0("AUC = ", round(fit.logit.final.roc$auc,2))),
        col = c("red"))
 ```
  
-```{r}
+```{r, include = F, eval = F}
 fit.rf.final.roc <- roc(data.test$AD, fit.rf.final.prob[,2])
 
 plot(1-fit.rf.final.roc$specificities, fit.rf.final.roc$sensitivities, 
@@ -650,8 +650,6 @@ legend("bottomright", c(paste0("AUC = ", round(fit.rf.final.roc$auc,2))),
  
  
  
-## Final Model
-
 
 
 # Conclusion
@@ -662,38 +660,4 @@ Fulton, L.V.; Dolezel, D.; Harrop, J.; Yan, Y.; Fulton, C.P. Classification of A
 
 Knight Alzheimer Disease Research Center, CDR Scoring Table: https://knightadrc.wustl.edu/professionals-clinicians/cdr-dementia-staging-instrument/cdr-scoring-table/
 
-
-
-
-
-```{r, include = F}
-set.seed(1)
-
-# train GBM model
-fit.gbm <- gbm(AD~., distribution = "multinomial", 
-                data = data.train,
-                n.trees = 500,
-                interaction.depth = 5, 
-                shrinkage = 0.01,
-                train.fraction = 0.75, 
-                verbose = FALSE, 
-                n.cores = NULL)
-```
-
-```{r}
-fit.gbm $valid.error
-```
-
-
-```{r, echo = F}
-best.iter <- gbm.perf(fit.gbm, method = "cv")
-```
-
-
-```{r, include = F}
-ntree <- which.min(fit.gbm$cv.error)
-ntree
-```
-
-### Fine Tuning
 
