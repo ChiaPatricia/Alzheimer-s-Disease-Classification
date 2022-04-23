@@ -29,7 +29,7 @@ editor_options:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(fig.height=4, fig.width=6, warning = F)
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(data.table,randomForest, tree, ISLR, rpart, gbm, rpart.plot, caret, car, MASS, rattle, pROC, partykit, ggplot2, glmnet, leaps, dplyr, keras, neuralnet, imager, ranger, elasticnet,factoextra, stargazer,keras)
+pacman::p_load(data.table,randomForest, tree, ISLR, rpart, gbm, rpart.plot, caret, car, MASS, rattle, pROC, partykit, ggplot2, glmnet, leaps, dplyr, keras, neuralnet, imager, ranger, elasticnet,factoextra, stargazer, keras, xgboost, randomForestExplainer, DiagrammeR, SHAPforxgboost)
 ```
 
 
@@ -193,18 +193,15 @@ data %>%
   theme_light()
 ```
 
-##TODO: more visualizations?
 
 
-
-# Feature engineering maybe?
 
 
 # V. Model Building
 
 ## Data Splitting
 
-We split the data into three sets: training, testing and validation. The training set will be used to fit a model; the testing set will be used report a model's effectiveness; and the validation set will be held until the end to evaluate our final model.
+We split the data into three sets: training, testing and validation. The training set is used to fit a model; the testing set is used to report a model's effectiveness; the validation set is held until the end to evaluate our final model. We randomly select 70% of the data to be the training set, 15% of the observations to be the testing set and the remaining 15% to the the validation set.
 
 ```{r, include = F}
 # train-validation-test split
@@ -222,20 +219,15 @@ idx_val <- which(!idx_no_train %in% idx_test)
 data.train <- data[idx_train,] %>% select(-c(ID))
 data.test <- data[idx_test,]  %>% select(-c(ID))
 data.val <- data[idx_val,] %>% select(-c(ID))
-
-
-# scale training set
-# data.train[, !names(data.train) %in% c("Gender", "AD")] <- scale(data.train[, !names(data.train) %in% c("Gender", "AD")], center = TRUE, scale = TRUE)
 ```
 
-## Model 1: LASSO Logistic Regression Model
+## Model 1: Logistic Regression
 
-- Model Fit
+### Model Fitting
 
-We first fit a logistic regression model. We selected a sparse model by using LASSO regularization technique. We used **cv.glmnet()** function to implement cross validation.
+We first fit a logistic regression model. We select a sparse model by using LASSO regularization technique and use the **cv.glmnet()** function to implement cross validation. The criteria is set to be deviance and 10-fold cross validation is applied. 
 
-The criteria is set to be deviance and 10-fold Cross Validation is applied. We chose the set of variables which give the smallest cross-validated error. The variables selected are: Gender, Age, EDUC, SES, MMSE, eTIV and nWBV.
-
+The plot below shows how the deviance varies with $\lambda$ and the number of non-zero coefficients.
 ```{r, echo = F}
 X <- model.matrix(AD~., data.train)[,-1]
 Y <- data.train[,length(data.train)]
@@ -245,32 +237,37 @@ fit1.cv <- cv.glmnet(X, Y, alpha=1, family="binomial", nfolds = 10, type.measure
 plot(fit1.cv)
 ```
 
+We start with choosing the set of variables which give the smallest cross-validated error. The 7 variables selected are: Gender, Age, EDUC, SES, MMSE, eTIV and nWBV.
 
-```{r}
+```{r, include = F}
 coef.1se <- coef(fit1.cv, s = "lambda.min")
 coef.1se <- coef.1se[which(coef.1se != 0),]
 vars <- rownames(as.matrix(coef.1se))
 vars
 ```
 
-
-```{r}
+```{r, include = F}
 fit.logit <- glm(AD~Gender+ Age + EDUC + SES + MMSE + eTIV + nWBV, family=binomial, data=data.train)
 summary(fit.logit)
 ```
 
 
 
-- Fine Tuning
+### Fine Tuning
 
-Based on this model, we refit the model using backward selection to drop any variables with significance level p < 0.05. In the end, only three variables remained, which are Gender, MMSE and nWBV. In fact, this is the same set of variable that corresponds to the largest value of $\lambda$ such that the cross-validated error is within 1 standard error of the minimum cross-validated error.
+Fitting the logistic model using these variables, we notice that not all the variables are significant at level 0.05. Thus, based on this model, we proceed to perform backward selection until all the remaining variables are significant at level 0.05.
 
-```{r}
+In the end, only three variables remain, which are Gender, MMSE and nWBV. In fact, we notice that this is the same set of variable corresponding to `lambda.1se`, which is the largest value of $\lambda$ such that the cross-validated error is within 1 standard error of the minimum cross-validated error.
+
+Our final logistic model gives the following result:
+![Result of Logistic Model](graph/logistic_result.png)
+
+```{r, include = F}
 fit.logit.final <- glm(AD~Gender+ MMSE + nWBV, family=binomial, data=data.train)
 summary(fit.logit.final)
 ```
 
-- Analysis
+### Analysis
 
 Based on the summary table of the model, the logit function is given by:
 $$
@@ -298,46 +295,329 @@ $$
 ```{r, include = F}
 #use test dataset to estimate misclassification error
 fit.logit.final.test <- predict(fit.logit.final,data.test,type = "response")
-fitfinal.pred <- as.factor(ifelse(fit.logit.final.test > 1/2, "1", "0"))
+logit.pred <- as.factor(ifelse(fit.logit.final.test > 1/2, "1", "0"))
+logit.error <- mean(logit.pred != data.test$AD)
+round(logit.error,3)
+logit.cm <- table(logit.pred, data.test$AD)
+logit.cm
 ```
 
 
-
-
-Using the test data to make classifications based on the above-mentioned criteria, we obtained the following confusion matrix.
-
-```{r}
-cm.test <- table(fitfinal.pred, data.test$AD)
-cm.test
-```
-
+Using the testing dataset to evaluate the performance of this model, we see that the misclassification error rate is 0.198. The confusion matrix is given below.
 
 |     | $Y=0$ | $Y=1$ |
 |-------|-------|-------|
 | $\hat{Y}=0$ | 41 | 11 |
 | $\hat{Y}=1$ | 7 | 32 |
 
+This model has a sensitivity rate of 0.744 and a specificity rate of 0.854.
 
-The misclassification error rate is 0.198.
-```{r}
-log.error.test <- mean(fitfinal.pred != data.test$AD)
-log.error.test
-```
+```{r, include=F}
+sensitivity <- logit.cm[2,2]/sum(logit.cm[,2])
+round(sensitivity,3)
 
-```{r}
-sensitivity <- cm.test[2,2]/sum(cm.test[,2])
-sensitivity
+specificity <- logit.cm[1,1]/sum(logit.cm[,1])
+round(specificity,3)
 
-specificity <- cm.test[1,1]/sum(cm.test[,1])
-specificity
-
-fdr <- cm.test[2,1] / sum(cm.test[2,]) # false discovery rate
+fdr <- logit.cm[2,1] / sum(logit.cm[2,]) # false discovery rate
 fdr
 
-positive.pred <- cm.test[2,2] / sum(cm.test[2,]) # positive prediction
+positive.pred <- logit.cm[2,2] / sum(logit.cm[2,]) # positive prediction
 positive.pred
 ```
 
+
+
+
+### Findings TODO
+
+With only 3 variables left in the logistic regression model, the result is rather simple to interpret.
+The most important variable is...
+
+
+
+## Model 2 Random Forest 
+
+### Model Fitting and Fine Tuning
+
+The second model that we build is a random forest model. We first set `mtry` (number of randomly chosen predictors at each split) to be 3, which is the square root of the number of predictors. We set `ntree` to be 500. The split criterion is set to be misclassification error.
+
+By plotting the error rate v.s number of trees, we decide to use 300 trees in order to settle down the OOB testing errors.
+
+```{r, echo = F}
+set.seed(1)
+fit.rf <- randomForest(AD~., data.train, mtry = 3, 
+                    ntree = 500)
+
+# Three curves of MCE of 1's, 0's and  overall.
+plot(fit.rf)
+legend("topright", colnames(fit.rf$err.rate), col=1:3, cex=0.8, fill=1:3)
+```
+ 
+Then, by setting `ntree=300`, we want to compare effects of different `mtry`. Thus, we loop `mtry` from 1 to 10 and return the testing OOB errors for each of the model. In the end, we decide to use `mtry=2` which gives the minimum error rate.
+
+```{r, echo = F}
+set.seed(3)
+rf.error <- 1:10  
+for (p in 1:10)  
+{
+  fit.rf <- randomForest(AD~., data.train, mtry = p, ntree = 300)
+  rf.error[p] <- fit.rf$err.rate[250]  # collecting oob error rate based on 250 trees
+}
+# rf.error   
+```
+
+```{r, echo=F}
+plot(1:10, rf.error, pch=16,
+     main = "Testing errors of mtry with 250 trees",
+     xlab="mtry",
+     ylab="OOB mse of mtry",
+     col = 8,
+     lwd = 15)
+lines(1:10, rf.error, lwd = 5, col = 8)
+points(2, rf.error[2], col = 2, lwd = 13, pch = 19)
+```
+
+### Analysis
+
+Using 0.5 as threshold to determine the class of instances in the test dataset, the misclassification rate of our final random forest model is 0.143, the sensitivity rate is 0.814 and the specificity rate is 0.896. The confusion matrix is also shown below and we can see that the model roughly achieves a balance to predict positive and negative class.
+
+
+|     | $Y=0$ | $Y=1$ |
+|-------|-------|-------|
+| $\hat{Y}=0$ | 43 | 8 |
+| $\hat{Y}=1$ | 5 | 35 |
+
+```{r, include = F}
+set.seed(3)
+fit.rf.final <- randomForest(AD~., data.train, 
+                             mtry = 2, 
+                             ntree = 300)
+fit.rf.final.prob <- predict(fit.rf.final, data.test, type = 'prob')
+fit.rf.final.pred <- as.factor(ifelse(fit.rf.final.prob[,2]>1/2, "1", "0"))
+fit.rf.test.err <- mean(data.test$AD != fit.rf.final.pred)
+fit.rf.test.err
+```
+
+```{r, include = F}
+rf.cm  <- table(fit.rf.final.pred, data.test$AD)
+rf.cm
+```
+
+
+```{r, include = F}
+sensitivity <- rf.cm[2,2]/sum(rf.cm[,2])
+round(sensitivity,3)
+
+specificity <- rf.cm[1,1]/sum(rf.cm[,1])
+round(specificity,3)
+```
+
+
+
+
+
+### Findings
+
+From the variable importance plot of our final random forest model, we can see that MMSE is the most important feature in this model.
+
+```{r, echo = F}
+set.seed(3)
+varImpPlot(fit.rf.final)
+```
+
+The plot below demonstrates the distribution of minimal depth among all the trees in the forest. The vertical bar is the mean of minimal depth for each feature. This plot can give us a clearer idea of the role that each feature plays in our model. 
+
+We can see that MMSE and nWBV are more likely to be the root of the tree compared to other variables. The average minimal depths of MMSE and nWBV are around 1.5, suggesting that many dementia observations can be separated effectively on the basis of these two variables.
+
+```{r}
+min_depth <- min_depth_distribution(fit.rf.final)
+# save(min_depth, file = "RData/min_depth.rda")
+load("RData/min_depth.rda")
+plot_min_depth_distribution(min_depth)
+```
+
+```{r}
+# importance_frame <- measure_importance(fit.rf.final)
+# plot_multi_way_importance(importance_frame, size_measure = "p_value")
+```
+
+
+
+## Model 3 & 4: Boosting
+
+### Model Fitting and Fine Tuning
+
+For boosting, we implement both gradient boosting and extreme gradient boosting model. Both models turn out to give similar result. 
+
+We use the grid search method which iterates over many possible combinations of hyperparameter values, thus determining the best-performing set of hyperparameters. 
+
+In the case of gradient boosting, the `distribution` is set to be `multinomial`. We then look at 135 models with various combinations of learning rate, tree numbers, tree depth and minimum number of observations in the end node. We apply 10-fold cross validation and record the minimum cross validated error for each of the model. 
+
+
+```{r, eval = F}
+## DO NOT RUNNNNNNNNN
+## Gradient Boosting
+hyper_grid <- expand.grid(shrinkage = c(.0075, .01, .0125, .015, .0175),
+                          n.trees = c(500, 800, 1000),
+                          interaction.depth = c(1, 3, 5),
+                          n.minobsinnode = c(5, 10, 15))
+
+nrow(hyper_grid)
+
+for(i in 1:nrow(hyper_grid)) {
+    print (i)
+  
+    set.seed(1)
+    fit.gbm.tune <- gbm(AD~.,distribution = "multinomial",
+                    data = data.train,
+                    n.trees = ntree,
+                    interaction.depth = hyper_grid$interaction.depth[i],
+                    shrinkage = hyper_grid$shrinkage[i],
+                    n.minobsinnode = hyper_grid$n.minobsinnode[i],
+                    cv.folds = 10,
+                    n.cores = NULL,
+                    verbose = FALSE)
+    
+    hyper_grid$min_cv_error[i] <- min(fit.gbm.tune$cv.error)
+  }
+
+
+hyper_grid %>%
+    dplyr::arrange(min_cv_error) %>%
+    head(3)
+
+save(hyper_grid,file='RData/hyper_grid.RData')
+```
+
+```{r,include = F}
+load('RData/hyper_grid.RData')
+```
+
+```{r, include = F}
+set.seed(1)
+fit.gbm.final <- gbm(AD~ .,
+                    distribution = "multinomial",
+                    data = data.train,
+                    n.trees = 1000,
+                    interaction.depth = 5,
+                    shrinkage = 0.01,
+                    n.minobsinnode = 15,
+                    cv.folds = 10,
+                    n.cores = NULL, 
+                    verbose = FALSE) 
+```
+
+
+In the case of extreme gradient boosting, we apply 10-fold cross validation and set the `early_stopping round` to be 50 to avoid overfitting. This means that the algorithm will be forced to stop if we do not see an improvement of the model performance in 50 iterations. Similar to the implementation of gradient boosting, we use grid search and test 240 models in total. We tune hyperparameters include learning rate, tree depth, minimum loss reduction for a split and penalty on the number of leaves in a tree, 
+
+```{r, include = F}
+## extreme gradient boosting
+
+data.train$AD <- as.numeric(as.factor(data.train$AD))-1
+data.test$AD <- as.numeric(as.factor(data.test$AD))-1
+dtrain = xgb.DMatrix(data = select(data.train, -AD) %>% data.matrix,
+                     label = pull(data.train, AD))
+dtest = xgb.DMatrix(data = select(data.test, -AD) %>% data.matrix,
+                    label = pull(data.test, AD))
+
+params = list(booster = 'gbtree',    
+              eta = 0.2, 
+              max_depth = 3, 
+              subsample = 0.7, 
+              gamma = 1, 
+              colsample_bytree = sqrt(ncol(data.train)-1) / sqrt(ncol(data.train)-1),
+              min_child_weight = 1, 
+              objective = 'binary:logistic' )
+
+xgb.cv.result = xgb.cv(data=dtrain, params = params, nrounds = 500,
+                       early_stopping_rounds = 50,
+                       nfold = 10,
+                       prediction = TRUE,
+                       verbose = 0)
+```
+
+
+```{r, eval = F}
+## DO NOT RUNNNNNNNNN
+set.seed(1)
+# ntrees = xgb.cv.result$best_iteration
+param_grid = expand.grid(
+  nrounds = 300,
+  eta = seq(2,24,2)/300,
+  subsample = 0.7,
+  colsample_bytree = sqrt(ncol(data.train)-1) / sqrt(ncol(data.train)-1),
+  max_depth = c(1,2,3,4,5),
+  gamma = c(0.3, 0.5, 0.8, 1),
+  min_child_weight = 1
+)
+
+xgb_control <- trainControl(
+  method="cv",
+  number = 10
+)
+
+xgb.tuned <- train(AD~., data=data.train, trControl=xgb_control, tuneGrid=param_grid, lambda=0, method="xgbTree")
+
+save(xgb.tuned,file='RData/xgb.tuned.RData')
+```
+
+```{r, include = F}
+load('RData/xgb.tuned.RData')
+xgb.tuned$bestTune
+```
+
+
+### Analysis
+
+For the gradient boosting model, 
+
+```{r, include = F}
+# gradient boosting result
+pred <- predict(fit.gbm.final, n.trees = fit.gbm.final$n.trees, data.test)
+pred.gbm <- as.factor(ifelse(pred[,2,] >= 0.5, "1", "0"))
+gbm.error <- mean(data.test$AD != pred.gbm )
+gbm.error
+```
+
+
+```{r, include = F}
+# extreme gradient boosting result
+colnames(dtest) <- NULL
+pred <- predict(xgb.tuned$finalModel, dtest)
+xgb.pred <- as.factor(ifelse(pred >= 0.5, "1", "0"))
+xgb.error <- mean(data.test$AD != xgb.pred)
+xgb.error
+```
+
+
+
+
+
+
+
+- Predict
+
+
+|           | $Y=0$ | $Y=1$ |
+|-----------|-------|-------|
+|$\hat{Y}=0$|  11   |   1   |
+|$\hat{Y}=1$|  37   |   42  |
+
+
+### Findings
+
+
+```{r}
+xgb.plot.tree(model = xgb.tuned$finalModel, trees = 1)
+```
+
+
+```{r}
+xgb.importance(model=xgb.tuned$finalModel)
+```
+
+## Enesemble Model
 
 ```{r, echo = F}
 
@@ -353,70 +633,7 @@ plot(1-fit.logit.final.roc$specificities, fit.logit.final.roc$sensitivities,
 legend("bottomright", c(paste0("AUC = ", round(fit.logit.final.roc$auc,2))),
        col = c("red"))
 ```
-
-
-
-## Model 2 Random Forest 
-## TODO: 要不要再加个用gini的
-
-Second model we built is a random forest model. We first set mtry to be equal to square root of p (10) and num.trees to be 500. We use default setting split criterion: misclassification error.
-
-- Tuning Parameters
-Using the randomForest()
-
-```{r, echo = F}
-set.seed(1)
-fit.rf <- randomForest(AD~., data.train, mtry = 3, 
-                    num.trees = 500)
-
-# Three curves of MCE of 1's, 0's and  overall.
-plot(fit.rf)
-legend("topright", colnames(fit.rf$err.rate), col=1:3, cex=0.8, fill=1:3)
-```
-
-By plotting the error rate vs number of trees, we find that 250 trees may be needed to settle the OOB testing errors.
  
-By setting `ntree=250`, we want to compare effects of different mtry.
-So we loop mtry from 1 to 10 and return the testing OOB errors for each of them
-In the end, we decide to use `mtry=2` which gives the minimum error rate.
-
-```{r, echo = F}
-set.seed(1)
-rf.error <- 1:10  
-for (p in 1:10)  
-{
-  fit.rf <- randomForest(AD~., data.train, mtry = p, 
-                    num.trees = 250)
-  rf.error[p] <- fit.rf$err.rate[250]  # collecting oob error rate based on 250 trees
-}
-# rf.error   
-
-plot(1:10, rf.error, pch=16,
-     main = "Testing errors of mtry with 250 trees",
-     xlab="mtry",
-     ylab="OOB mse of mtry")
-lines(1:10, rf.error)
-```
-
-- Analysis
-
-```{r, echo = F}
-set.seed(1)
-fit.rf.final <- randomForest(AD~., data.train, mtry = 2, 
-                    num.trees = 250,importance = T)
-varImpPlot(fit.rf.final)
-
-```
-
-From the above plot, we get to know that the MMSE is the most important variable in this model.
-
-```{r, include = F}
-fit.rf.final.prob <-predict(fit.rf.final, data.test, type = 'prob')
-fit.rf.final.pred<-as.factor(ifelse(fit.rf.final.prob[,2]>1/2, "1", "0"))
-fit.rf.test.err <-mean(data.test$AD != fit.rf.final.pred)
-fit.rf.test.err
-```
-
 ```{r}
 fit.rf.final.roc <- roc(data.test$AD, fit.rf.final.prob[,2])
 
@@ -429,231 +646,9 @@ plot(1-fit.rf.final.roc$specificities, fit.rf.final.roc$sensitivities,
 legend("bottomright", c(paste0("AUC = ", round(fit.rf.final.roc$auc,2))),
        col = c("red"))
 ```
-
-
-Using 1/2 as threshold to determine the class of the instances in the test dataset, the misclassification rate is 0.131.
-and AUC is 0.95. The confusion matrix is showing below and we can see that the model's ability to predict positive class or negative class is balanced.
-
-```{r, echo = F}
-cm.val <- table(fit.rf.final.pred, data.test$AD)
-cm.val
-```
-
-|     | $Y=0$ | $Y=1$ |
-|-------|-------|-------|
-| $\hat{Y}=0$ | 43 | 7 |
-| $\hat{Y}=1$ | 5 | 36 |
-
-## Model 3: Gradient Boosting
-
-We then applied a gradient boosted model with gaussian loss function and 10000 iterations were performed.
-```{r}
-# for reproducibility
-set.seed(123)
-
-# train GBM model
-fit.gbm <- gbm(AD~., distribution = "gaussian", 
-                data = data.train,
-                n.trees = 10000, 
-                interaction.depth = 1, 
-                shrinkage = 0.001,
-                cv.folds = 10, 
-                verbose = FALSE, 
-                n.cores = NULL)
-print(fit.gbm)
-summary(fit.gbm)
-```
-
-The best cross-validation iteration was 8025.
-There were 8 predictors of which 8 had non-zero influence.
-
-Here, we see that the minimum CV RMSE is 0.3474829 (this means on average our model is about 0.3474829 off from the actual AD diagnosis) but the plot also illustrates that the CV error is still decreasing at 8025 trees.
-```{r}
-# get MSE and compute RMSE
-sqrt(min(fit.gbm$cv.error))
-gbm.perf(fit.gbm, method = "cv")
-min_MSE <- which.min(fit.gbm$cv.error)
-min_MSE
-```
-
-- Tuning parameter
-
-```{r,include=FALSE}
-# By increase the learning rate to take larger steps down the gradient descent, reduce the number of trees (since we are reducing the learning rate), and increase the depth of each tree from using a single split to 2 splits. This model achieves a slightly lower RMSE than our initial model with only 327 trees.
-# for reproducibility
-set.seed(123)
-
-# train GBM model
-fit.gbm1 <- gbm(AD~., distribution = "gaussian", 
-                data = data.train,
-                n.trees = 5000,
-                interaction.depth = 2,
-                shrinkage = 0.01,
-                cv.folds = 10,
-                n.cores = NULL, 
-                verbose = FALSE)  
-print(fit.gbm1)
-summary(fit.gbm1)
-# find index for n trees with minimum CV error
-min_MSE1 <- which.min(fit.gbm1$cv.error)
-min_MSE1
-# get MSE and compute RMSE
-sqrt(fit.gbm1$cv.error[min_MSE1])
-
-# plot loss function as a result of n trees added to the ensemble
-gbm.perf(fit.gbm1, method = "cv")
-```
-We then used the grid search method, which iterates over every possible combination of hyperparameter values and allows us to determine which combination performs best.
-
-To conduct a manual grid search, we first create a grid of hyperparameter combinations. We'll look at 270 models with different learning rates and tree depths.
-```{r}
-# create hyperparameter grid
-hyper_grid <- expand.grid(shrinkage = c(.0075, .01, .0125, .015, .0175, .02, .0225, .025, .0275, .03),
-                          interaction.depth = c(1, 3, 5),
-                          n.minobsinnode = c(5, 10, 15),
-                          bag.fraction = c(.65, .8, 1), 
-                          optimal_trees = 0,
-                          min_RMSE = 0)
-
-# total number of combinations
-nrow(hyper_grid)
-```
-Instead of performing 10-fold cross validation, we can speed up our tuning process by training on 75% of the training dataset and evaluate performance on the remaining 25%.
-
-# !!! DO NOT RUN TAKE A VELI VELI LONG TIME 
-# `load('hyper_grid.RData')` DIRECTLY
-
-```{r}
-random_index <- sample(1:nrow(data.train), nrow(data.train))
-random_train <- data.train[random_index, ]
-
-# grid search 
-for(i in 1:nrow(hyper_grid)) {
-    # reproducibility
-    set.seed(123)
-    
-    # train model
-    fit.gbm.tune <- gbm(AD~.,distribution = "gaussian",
-                    data = random_train,n.trees = 5000,
-                    interaction.depth = hyper_grid$interaction.depth[i],
-                    shrinkage = hyper_grid$shrinkage[i],
-                    n.minobsinnode = hyper_grid$n.minobsinnode[i],
-                    bag.fraction = hyper_grid$bag.fraction[i],
-                    train.fraction = .75, # speed up
-                    n.cores = NULL,
-                    verbose = FALSE)
-    # add min training error and trees to grid
-    hyper_grid$optimal_trees[i] <- which.min(fit.gbm.tune$valid.error)
-    hyper_grid$min_RMSE[i] <- sqrt(min(fit.gbm.tune$valid.error))
-  }
-
-hyper_grid %>% 
-    dplyr::arrange(min_RMSE) %>%
-    head(10)
-```
-```{r,include=FALSE}
-# save(hyper_grid,file='hyper_grid.RData')
-load('hyper_grid.RData')
-```
-
-Our best model is with an RMSE of 0.2964739, which is much better than our first model's.
-
-```{r}
-# for reproducibility
-set.seed(123)
-
-# train final model
-fit.gbm.final <- gbm(AD~ .,
-                    distribution = "gaussian",
-                    data = data.train,
-                    n.trees = 1462,
-                    interaction.depth = 5,
-                    shrinkage = 0.0125,
-                    n.minobsinnode = 5,
-                    bag.fraction = 1, 
-                    train.fraction = .75,
-                    n.cores = NULL, 
-                    verbose = FALSE)  
-# print(fit.gbm.final)
-summary(fit.gbm.final,
-        cBars = 10,
-        method = relative.influence, 
-        las = 2)
-```
-- Predict
-
-```{r}
-fit.gbm.pred <- predict(object = fit.gbm.final, 
-                        data.test,
-                        type = "response",
-                        fit.gbm.final$n.trees)
-
-fit.gbm.pred1 <- ifelse(fit.gbm.pred >= 1, "1", "0")
-# fit.gbm.pred2 <- ifelse(fit.gbm.pred >= 1/2, "1", "0")
-# fit.gbm.pred3 <- ifelse(fit.gbm.pred == 0, "0", "1")
-fit.gbm.test.error <- mean(data.test$AD != fit.gbm.pred1)
-fit.gbm.test.error
-# caret::RMSE(fit.gbm.pred1, data.test$AD)
-table(fit.gbm.pred1,data.test$AD)
-```
-
-|           | $Y=0$ | $Y=1$ |
-|-----------|-------|-------|
-|$\hat{Y}=0$|  11   |   1   |
-|$\hat{Y}=1$|  37   |   42  |
-
-
-
-## Model 4 Deep Learning 这个应该有点问题
-
-```{r}
-p = dim(X)[2]
-deep_model <- keras_model_sequential() %>%
-  layer_dense(units = 16, activation = "relu", input_shape = c(p)) %>% 
-  layer_dropout(0.5) %>% 
-  layer_dense(units = 2, activation = "softmax") # output
-
-deep_model %>% compile(
-  optimizer = "rmsprop",
-  loss = "sparse_categorical_crossentropy",
-  metrics = c("accuracy")
-)
-```
-
-```{r}
-fit.deep <- deep_model %>% fit(
-  X,
-  as.matrix(as.numeric(as.character(Y))),
-  epochs = 100,
-  validation_split = .15 # set 15% of the data3_xtain, data3_ytrain as the validation data
-)
-
-plot(fit.deep)
-```
-
-
-
-```{r}
-deep_model %>% fit(
-  X,
-  as.matrix(as.numeric(as.character(Y))),
-  epochs = 50,
-)
-deep_model%>% evaluate(model.matrix(AD~.,data.test)[,-1],as.matrix(as.integer(as.character(data.test$AD))))
-```
-
-```{r}
-pred.prob <- deep_model %>% predict(data.test)
-pred.prob
-```
-
-```{r}
-data.test[,]
-```
-
-
-
-## Enesemble Model
+ 
+ 
+ 
  
 ## Final Model
 
@@ -666,3 +661,39 @@ data.test[,]
 Fulton, L.V.; Dolezel, D.; Harrop, J.; Yan, Y.; Fulton, C.P. Classification of Alzheimer’s Disease with and without Imagery Using Gradient Boosted Machines and ResNet-50. Brain Sci. 2019, 9, 212. https://doi.org/10.3390/brainsci9090212
 
 Knight Alzheimer Disease Research Center, CDR Scoring Table: https://knightadrc.wustl.edu/professionals-clinicians/cdr-dementia-staging-instrument/cdr-scoring-table/
+
+
+
+
+
+```{r, include = F}
+set.seed(1)
+
+# train GBM model
+fit.gbm <- gbm(AD~., distribution = "multinomial", 
+                data = data.train,
+                n.trees = 500,
+                interaction.depth = 5, 
+                shrinkage = 0.01,
+                train.fraction = 0.75, 
+                verbose = FALSE, 
+                n.cores = NULL)
+```
+
+```{r}
+fit.gbm $valid.error
+```
+
+
+```{r, echo = F}
+best.iter <- gbm.perf(fit.gbm, method = "cv")
+```
+
+
+```{r, include = F}
+ntree <- which.min(fit.gbm$cv.error)
+ntree
+```
+
+### Fine Tuning
+
