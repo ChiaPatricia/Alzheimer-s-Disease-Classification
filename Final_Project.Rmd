@@ -416,8 +416,6 @@ round(specificity,3)
 
 
 
-
-
 ### Findings
 
 From the variable importance plot of our final random forest model, we can see that MMSE is the most important feature in this model.
@@ -431,7 +429,7 @@ The plot below demonstrates the distribution of minimal depth among all the tree
 
 We can see that MMSE and nWBV are more likely to be the root of the tree compared to other variables. The average minimal depths of MMSE and nWBV are around 1.5, suggesting that many dementia observations can be separated effectively on the basis of these two variables.
 
-```{r, include = F}
+```{r}
 # min_depth <- min_depth_distribution(fit.rf.final)
 # save(min_depth, file = "RData/min_depth.rda")
 load("RData/min_depth.rda")
@@ -558,7 +556,7 @@ xgb_control <- trainControl(
   number = 10
 )
 
-xgb.tuned <- train(AD~., data=data.train, trControl=xgb_control, tuneGrid=param_grid, lambda=0, method="xgbTree")
+xgb.tuned <- train(AD~., data=data.train, trControl=xgb_control, tuneGrid=param_grid, lambda=0, method="xgbTree" ,objective = 'binary:logistic' )
 
 save(xgb.tuned,file='RData/xgb.tuned.RData')
 ```
@@ -571,43 +569,53 @@ xgb.tuned$bestTune
 
 ### Analysis
 
-The final gradient boosting model gives an error rate of 0.187. The final extreme gradient boosting model gives an error rate of 0.165.
+The final gradient boosting model gives an error rate of 0.143. The final extreme gradient boosting model also gives an error rate of 0.143.
 
 ```{r, include = F}
 # gradient boosting result
-pred <- predict(fit.gbm.final, n.trees = fit.gbm.final$n.trees, data.test)
-pred.gbm <- as.factor(ifelse(pred[,2,] >= 0.5, "1", "0"))
+fit.gbm.prob <- predict(fit.gbm.final, n.trees = fit.gbm.final$n.trees, data.test)
+pred.gbm <- as.factor(ifelse(fit.gbm.prob[,2,] >= 0, "1", "0"))
 gbm.error <- mean(data.test$AD != pred.gbm )
 gbm.error
+
+table(pred.gbm, data.test$AD)
 ```
 
 
 ```{r, include = F}
 # extreme gradient boosting result
 colnames(dtest) <- NULL
-pred <- predict(xgb.tuned$finalModel, dtest)
+pred<- predict(xgb.tuned$finalModel, dtest)
 xgb.pred <- as.factor(ifelse(pred >= 0.5, "1", "0"))
 xgb.error <- mean(data.test$AD != xgb.pred)
 xgb.error
+
+table(xgb.pred, data.test$AD)
+
 ```
 
 
 
+- Predict: GBM
 
+|           | $Y=0$ | $Y=1$ |
+|-----------|-------|-------|
+|$\hat{Y}=0$|  44   |   9   |
+|$\hat{Y}=1$|  4    |   34  |
 
-- Predict
+- Predict: XGBoost
 
 
 |           | $Y=0$ | $Y=1$ |
 |-----------|-------|-------|
-|$\hat{Y}=0$|  11   |   1   |
-|$\hat{Y}=1$|  37   |   42  |
+|$\hat{Y}=0$|  42   |   7   |
+|$\hat{Y}=1$|  6    |   36  |
 
 
 ### Findings
 
 
-```{r, include = F}
+```{r}
 xgb.plot.tree(model = xgb.tuned$finalModel, trees = 1)
 ```
 
@@ -616,6 +624,15 @@ xgb.plot.tree(model = xgb.tuned$finalModel, trees = 1)
 xgb.importance(model=xgb.tuned$finalModel)
 ```
 
+## Model 5: Ensembled Model
+
+Taking the majority vote of the result of previously built models gives us the fifth model. 
+The miclassification error is about 0.154
+
+```{r, include = F }
+a <- apply(cbind(fit.rf.final.pred, as.character(xgb.pred), as.character(pred.gbm),logit.pred ), 1, table)
+ensembled_error<-mean(sapply(a, function(x) names(x)[which(x>=2)[1]])!=data.test$AD)
+```
 
 
 ## Final Model
@@ -647,6 +664,29 @@ legend("bottomright", c(paste0("AUC = ", round(fit.rf.final.roc$auc,2))),
        col = c("red"))
 ```
  
+```{r}
+fit.gbm.final.roc <- roc(data.test$AD, fit.rf.final.prob[,2])
+
+plot(1-fit.rf.final.roc$specificities, fit.rf.final.roc$sensitivities, 
+     col = "red", lwd = 3, type = "l",
+    xlab = "False Positive",
+    ylab = "True Positive (Sensitivity)",
+    main = "Final Model: ROC Curve")
+
+legend("bottomright", c(paste0("AUC = ", round(fit.rf.final.roc$auc,2))),
+       col = c("red"))
+
+```
+ 
+
+## TODO 要不要加个f1score啥的 
+```{r}
+testing_error = data.frame(
+  Model = c("Logistic Model", "Random Rorest",  "Gradient Boosting Machine", "XG Boost", "Ensembled Model"),
+  TestError = c(logit.error, fit.rf.test.err,gbm.error ,xgb.error,ensembled_error)
+  )
+testing_error
+```
  
  
  
