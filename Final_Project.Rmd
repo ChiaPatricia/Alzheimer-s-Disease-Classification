@@ -1,6 +1,6 @@
 ---
 title: "Modern Data Mining - Final Project"
-subtitle: "Predicting Dementia Among Elderly People"
+subtitle: "Alzheimer’s Disease Classification"
 author:
 - Jia Xu
 - Yuqin Zhang
@@ -44,6 +44,11 @@ Our [data](https://www.kaggle.com/datasets/jboysen/mri-and-alzheimers?select=oas
 The data was released by Open Access Series of Imaging Studies (OASIS).
 
 # II. Description of the Data
+
+Two datasets are used in this project. One dataset deals with cross-sectional MRI data for adults aged between 18 to 96. The other dataset deals with longitudinal MRI data for older adults between 60 to 96. The two datasets have the following variables in common: gender, age, Mini Mental State Examination score, estimated total intracranial volume, normalized whole brain volume, etc. After data cleansing, we append the two datasets and obtain 608 valid observations in total.
+
+
+
 
 The dataset is a longitudinal collection of MRI scan history of 150 elder adults aged between 60 and 98. Subjects may be scanned more than once, and there are 373 imaging sessions recorded in total. The following table showcases the features that the original data contains:
 
@@ -214,7 +219,7 @@ set.seed(10)
 idx_train <- sample(N,n1)
 idx_no_train <- which(!seq(1:N) %in% idx_train)
 idx_test <- sample(idx_no_train, n2)
-idx_val <- which(!idx_no_train %in% idx_test)
+idx_val <- idx_no_train[which(!(idx_no_train %in% idx_test))]
  
 # identification information, i.e. encounter_id and patient_nbr, should not be included in the model
 data.train <- data[idx_train,] %>% select(-c(ID))
@@ -222,7 +227,9 @@ data.test <- data[idx_test,]  %>% select(-c(ID))
 data.val <- data[idx_val,] %>% select(-c(ID))
 ```
 
-## Model 1: Logistic Regression
+
+
+## Model 1: Logistic Classification
 
 ### Model Fitting
 
@@ -296,7 +303,7 @@ $$
 ```{r, include = F}
 #use test dataset to estimate misclassification error
 fit.logit.final.test <- predict(fit.logit.final,data.test,type = "response")
-logit.pred <- as.factor(ifelse(fit.logit.final.test > 1/2, "1", "0"))
+logit.pred <- as.factor(ifelse(fit.logit.final.test > 1/2, 1, 0))
 logit.error <- mean(logit.pred != data.test$AD)
 round(logit.error,3)
 logit.cm <- table(logit.pred, data.test$AD)
@@ -314,26 +321,29 @@ Using the testing dataset to evaluate the performance of this model, we see that
 This model has a sensitivity rate of 0.744 and a specificity rate of 0.854.
 
 ```{r, include=F}
-sensitivity <- logit.cm[2,2]/sum(logit.cm[,2])
-round(sensitivity,3)
+logit.recall <- logit.cm[2,2]/sum(logit.cm[,2])
+round(logit.recall,3) # sensitivity, recall
 
 specificity <- logit.cm[1,1]/sum(logit.cm[,1])
-round(specificity,3)
+#round(specificity,3) # specificity
+
 
 fdr <- logit.cm[2,1] / sum(logit.cm[2,]) # false discovery rate
-fdr
+#fdr
 
-positive.pred <- logit.cm[2,2] / sum(logit.cm[2,]) # positive prediction
-positive.pred
+logit.precision <- logit.cm[2,2] / sum(logit.cm[2,]) # positive prediction, precision
+round(logit.precision,3)
+
+logit.f1 <- (2*logit.recall*logit.precision)/(logit.recall + logit.precision)
+logit.f1
 ```
 
 
 
 
-### Findings TODO
+### Findings
 
-With only 3 variables left in the logistic regression model, the result is rather simple to interpret.
-The most important variable is...
+With very few variables left in the logistic regression model, the result is rather simple to interpret. The model suggests that MMSE, nWBV and age are the top 3 important variables in predicting one's probability of developing AD. The log odds is a decreasing function of MMSE and nWBV. Holding other variables constant, when MSSE decreases, the probability of being diagnosed with AD increases. Similarly, decrease in nWBV also implies higher probability of AD diagnosis. On the other hand, the log odds is an increasing function of age. Specifically, when age is increased by 1, the log odds increases 0.82.
 
 
 
@@ -395,10 +405,12 @@ fit.rf.final <- randomForest(AD~., data.train,
                              mtry = 2, 
                              ntree = 300)
 fit.rf.final.prob <- predict(fit.rf.final, data.test, type = 'prob')
-fit.rf.final.pred <- as.factor(ifelse(fit.rf.final.prob[,2]>1/2, "1", "0"))
+fit.rf.final.pred <- as.factor(ifelse(fit.rf.final.prob[,2] > 1/2, 1, 0))
 fit.rf.test.err <- mean(data.test$AD != fit.rf.final.pred)
 fit.rf.test.err
 ```
+
+
 
 ```{r, include = F}
 rf.cm  <- table(fit.rf.final.pred, data.test$AD)
@@ -407,18 +419,22 @@ rf.cm
 
 
 ```{r, include = F}
-sensitivity <- rf.cm[2,2]/sum(rf.cm[,2])
-round(sensitivity,3)
+rf.recall <- rf.cm[2,2]/sum(rf.cm[,2])
+round(rf.recall,3)
 
-specificity <- rf.cm[1,1]/sum(rf.cm[,1])
-round(specificity,3)
+
+rf.precision <- rf.cm[2,2] / sum(rf.cm[2,]) # positive prediction, precision
+round(rf.precision ,3)
+
+rf.f1 <- (2*rf.recall*rf.precision)/(rf.recall + rf.precision)
+rf.f1
 ```
 
 
 
 ### Findings
 
-From the variable importance plot of our final random forest model, we can see that MMSE is the most important feature in this model.
+From the variable importance plot of our final random forest model, we can see that MMSE is the most important feature in this model. nWBV and Age also have high importance. This result corresponds with the finding of logistic classification model.
 
 ```{r, echo = F}
 set.seed(3)
@@ -447,46 +463,45 @@ plot_min_depth_distribution(min_depth)
 
 ### Model Fitting and Fine Tuning
 
-For boosting, we implement both gradient boosting and extreme gradient boosting model. Both models turn out to give similar result. 
+For boosting, we implement both gradient boosting and extreme gradient boosting model. Both models turn out to produce similar result on the testing dataset.
 
 We use the grid search method which iterates over many possible combinations of hyperparameter values, thus determining the best-performing set of hyperparameters. 
 
 In the case of gradient boosting, the `distribution` is set to be `multinomial`. We then look at 135 models with various combinations of learning rate, tree numbers, tree depth and minimum number of observations in the end node. We apply 10-fold cross validation and record the minimum cross validated error for each of the model. 
 
-
 ```{r, eval = F, include = F}
-## DO NOT RUNNNNNNNNN
+## DO NOT RUNNNNNNNNN THIS CHUNKKKKK
 ## Gradient Boosting
-hyper_grid <- expand.grid(shrinkage = c(.0075, .01, .0125, .015, .0175),
-                          n.trees = c(500, 800, 1000),
-                          interaction.depth = c(1, 3, 5),
-                          n.minobsinnode = c(5, 10, 15))
+# hyper_grid <- expand.grid(shrinkage = c(.0075, .01, .0125, .015, .0175),
+#                           n.trees = c(500, 800, 1000),
+#                           interaction.depth = c(1, 3, 5),
+#                           n.minobsinnode = c(5, 10, 15))
+# 
+# nrow(hyper_grid)
+# 
+# for(i in 1:nrow(hyper_grid)) {
+#     print (i)
+#   
+#     set.seed(1)
+#     fit.gbm.tune <- gbm(AD~.,distribution = "multinomial",
+#                     data = data.train,
+#                     n.trees = ntree,
+#                     interaction.depth = hyper_grid$interaction.depth[i],
+#                     shrinkage = hyper_grid$shrinkage[i],
+#                     n.minobsinnode = hyper_grid$n.minobsinnode[i],
+#                     cv.folds = 10,
+#                     n.cores = NULL,
+#                     verbose = FALSE)
+#     
+#     hyper_grid$min_cv_error[i] <- min(fit.gbm.tune$cv.error)
+#   }
+# 
+# 
+# hyper_grid %>%
+#     dplyr::arrange(min_cv_error) %>%
+#     head(3)
 
-nrow(hyper_grid)
-
-for(i in 1:nrow(hyper_grid)) {
-    print (i)
-  
-    set.seed(1)
-    fit.gbm.tune <- gbm(AD~.,distribution = "multinomial",
-                    data = data.train,
-                    n.trees = ntree,
-                    interaction.depth = hyper_grid$interaction.depth[i],
-                    shrinkage = hyper_grid$shrinkage[i],
-                    n.minobsinnode = hyper_grid$n.minobsinnode[i],
-                    cv.folds = 10,
-                    n.cores = NULL,
-                    verbose = FALSE)
-    
-    hyper_grid$min_cv_error[i] <- min(fit.gbm.tune$cv.error)
-  }
-
-
-hyper_grid %>%
-    dplyr::arrange(min_cv_error) %>%
-    head(3)
-
-save(hyper_grid,file='RData/hyper_grid.RData')
+# save(hyper_grid,file='RData/hyper_grid.RData')
 ```
 
 ```{r,include = F}
@@ -494,7 +509,7 @@ load('RData/hyper_grid.RData')
 ```
 
 ```{r, include = F}
-set.seed(1)
+set.seed(2)
 fit.gbm.final <- gbm(AD~ .,
                     distribution = "multinomial",
                     data = data.train,
@@ -508,19 +523,24 @@ fit.gbm.final <- gbm(AD~ .,
 ```
 
 
-In the case of extreme gradient boosting, we apply 10-fold cross validation and set the `early_stopping round` to be 50 to avoid overfitting. This means that the algorithm will be forced to stop if we do not see an improvement of the model performance in 50 iterations. Similar to the implementation of gradient boosting, we use grid search and test 240 models in total. We tune hyperparameters include learning rate, tree depth, minimum loss reduction for a split and penalty on the number of leaves in a tree, 
+In the case of extreme gradient boosting, we apply 10-fold cross validation and set the `early_stopping round` to be 50 to avoid overfitting. This means that the algorithm will be forced to stop if we do not see an improvement of the model's performance in 50 iterations. Similar to the implementation of gradient boosting, we use grid search and test 240 models in total. We tune hyperparameters include learning rate, tree depth, minimum loss reduction for a split and penalty on the number of leaves in a tree, etc.
+
 
 ```{r, include = F}
 ## extreme gradient boosting
 
 data.train$AD <- as.numeric(as.factor(data.train$AD))-1
 data.test$AD <- as.numeric(as.factor(data.test$AD))-1
-dtrain = xgb.DMatrix(data = select(data.train, -AD) %>% data.matrix,
-                     label = pull(data.train, AD))
-dtest = xgb.DMatrix(data = select(data.test, -AD) %>% data.matrix,
-                    label = pull(data.test, AD))
+data.val$AD <- as.numeric(as.factor(data.val$AD))-1
 
-params = list(booster = 'gbtree',    
+dtrain <- xgb.DMatrix(data = select(data.train, -AD) %>% data.matrix,
+                     label = pull(data.train, AD))
+dtest <- xgb.DMatrix(data = select(data.test, -AD) %>% data.matrix,
+                    label = pull(data.test, AD))
+dval <- xgb.DMatrix(data = select(data.val, -AD) %>% data.matrix,
+                    label = pull(data.val, AD))
+
+params <- list(booster = 'gbtree',    
               eta = 0.2, 
               max_depth = 3, 
               subsample = 0.7, 
@@ -529,7 +549,7 @@ params = list(booster = 'gbtree',
               min_child_weight = 1, 
               objective = 'binary:logistic' )
 
-xgb.cv.result = xgb.cv(data=dtrain, params = params, nrounds = 500,
+xgb.cv.result <- xgb.cv(data=dtrain, params = params, nrounds = 500,
                        early_stopping_rounds = 50,
                        nfold = 10,
                        prediction = TRUE,
@@ -539,37 +559,55 @@ xgb.cv.result = xgb.cv(data=dtrain, params = params, nrounds = 500,
 
 ```{r, eval = F, include = F}
 ## DO NOT RUNNNNNNNNN
-set.seed(1)
-# ntrees = xgb.cv.result$best_iteration
-param_grid = expand.grid(
-  nrounds = 300,
-  eta = seq(2,24,2)/300,
-  subsample = 0.7,
-  colsample_bytree = sqrt(ncol(data.train)-1) / sqrt(ncol(data.train)-1),
-  max_depth = c(1,2,3,4,5),
-  gamma = c(0.3, 0.5, 0.8, 1),
-  min_child_weight = 1
-)
-
-xgb_control <- trainControl(
-  method="cv",
-  number = 10
-)
-
-xgb.tuned <- train(AD~., data=data.train, trControl=xgb_control, tuneGrid=param_grid, lambda=0, method="xgbTree" ,objective = 'binary:logistic' )
-
-save(xgb.tuned,file='RData/xgb.tuned.RData')
+# set.seed(1)
+# # ntrees = xgb.cv.result$best_iteration
+# param_grid = expand.grid(
+#   nrounds = 300,
+#   eta = seq(2,24,2)/300,
+#   subsample = 0.7,
+#   colsample_bytree = sqrt(ncol(data.train)-1) / sqrt(ncol(data.train)-1),
+#   max_depth = c(1,2,3,4,5),
+#   gamma = c(0.3, 0.5, 0.8, 1),
+#   min_child_weight = 1
+# )
+# 
+# xgb_control <- trainControl(
+#   method="cv",
+#   number = 10
+# )
+# 
+# xgb.tuned <- train(AD~., data=data.train, trControl=xgb_control, tuneGrid=param_grid, lambda=0, method="xgbTree" ,objective = 'binary:logistic' )
+# 
+# save(xgb.tuned,file='RData/xgb.tuned.RData')
 ```
 
 ```{r, include = F}
 load('RData/xgb.tuned.RData')
-xgb.tuned$bestTune
+# xgb.tuned$bestTune
 ```
 
 
 ### Analysis
 
-The final gradient boosting model gives an error rate of 0.143. The final extreme gradient boosting model also gives an error rate of 0.143.
+Both gradient boosting model and extreme gradient boosting model give an error rate of 0.143.
+
+The confusion matrix of gradient boosting model:
+
+|           | $Y=0$ | $Y=1$ |
+|-----------|-------|-------|
+|$\hat{Y}=0$|  44   |   9   |
+|$\hat{Y}=1$|  4    |   34  |
+
+The confusion matrix of extreme gradient boosting model:
+
+
+|           | $Y=0$ | $Y=1$ |
+|-----------|-------|-------|
+|$\hat{Y}=0$|  42   |   7   |
+|$\hat{Y}=1$|  6    |   36  |
+
+We see that on this specific testing dataset, gradient boosting model has fewer false discovery cases than the extreme gradient boosting model. On the other hand, extreme gradient boosting model has a better balance between false negative and false positive rate. Overall, the performance of the two boosting methods are rather similar.
+
 
 ```{r, include = F}
 # gradient boosting result
@@ -578,9 +616,22 @@ pred.gbm <- as.factor(ifelse(fit.gbm.prob[,2,] >= 0, "1", "0"))
 gbm.error <- mean(data.test$AD != pred.gbm )
 gbm.error
 
-table(pred.gbm, data.test$AD)
+gb.cm <- table(pred.gbm, data.test$AD)
+gb.cm
 ```
 
+
+```{r}
+gb.recall <- gb.cm[2,2]/sum(gb.cm[,2])
+round(gb.recall,3)
+
+
+gb.precision <- gb.cm[2,2] / sum(gb.cm[2,]) # positive prediction, precision
+round(gb.precision ,3)
+
+gb.f1 <- (2*gb.recall*gb.precision)/(gb.recall + gb.precision)
+gb.f1
+```
 
 ```{r, include = F}
 # extreme gradient boosting result
@@ -590,52 +641,198 @@ xgb.pred <- as.factor(ifelse(pred >= 0.5, "1", "0"))
 xgb.error <- mean(data.test$AD != xgb.pred)
 xgb.error
 
-table(xgb.pred, data.test$AD)
+xgb.cm <- table(xgb.pred, data.test$AD)
+xgb.cm 
+```
 
+
+```{r}
+xgb.recall <- xgb.cm[2,2]/sum(xgb.cm[,2])
+round(xgb.recall,3)
+
+xgb.precision <- xgb.cm[2,2] / sum(xgb.cm[2,]) # positive prediction, precision
+round(xgb.precision ,3)
+
+xgb.f1 <- (2*xgb.recall*xgb.precision)/(xgb.recall + xgb.precision)
+xgb.f1
 ```
 
 
 
-- Predict: GBM
-
-|           | $Y=0$ | $Y=1$ |
-|-----------|-------|-------|
-|$\hat{Y}=0$|  44   |   9   |
-|$\hat{Y}=1$|  4    |   34  |
-
-- Predict: XGBoost
-
-
-|           | $Y=0$ | $Y=1$ |
-|-----------|-------|-------|
-|$\hat{Y}=0$|  42   |   7   |
-|$\hat{Y}=1$|  6    |   36  |
 
 
 ### Findings
 
+Below, the table shows the top 5 important features in the Extreme Gradient Boosting model.
+```{r, echo = F}
+xgb.top5 <- head(xgb.importance(model=xgb.tuned$finalModel),5) %>% select(-Cover)
+xgb.top5
+```
 
-```{r}
+The `gain` measures the contribution of the feature to the model. We can see that MMSE has a significantly higher `gain` than other variables. The `frequency` measures the relative proportion of times for which a feature occurs in the trees. We see that nWBV and eTIV have high `frequency`. MMSE and Age also have relatively high `frequency`.
+
+
+We now display the first tree in the Extreme Gradient Boosting model. We see that the first cut is based on MMSE and the second cut is based on nWBV. Age and eTIV appear in subsequent cuts. This roughly corresponds to the feature importance table shown above. 
+
+```{r, echo = F}
 xgb.plot.tree(model = xgb.tuned$finalModel, trees = 1)
 ```
 
 
+
+
+
+
+## Model 5: Ensemble Model
+
+We have built four models in total: logistic classification, random forest, gradient boosting and extreme gradient boosting. Taking the majority vote of the result of these four models gives us the fifth model. 
+
+The miclassification error is about 0.143. The confusion matrix is shown below.
+
+|           | $Y=0$ | $Y=1$ |
+|-----------|-------|-------|
+|$\hat{Y}=0$|  43   |   8   |
+|$\hat{Y}=1$|  5    |   35  |
+
+
 ```{r, include = F}
-xgb.importance(model=xgb.tuned$finalModel)
+combined.res <- data.frame(cbind(as.character(logit.pred), 
+                                 as.character(fit.rf.final.pred), 
+                                 as.character(pred.gbm), 
+                                 as.character(xgb.pred)))
+colnames(combined.res) <- c("logit", "rf", "gbm", "xgb")
+
+combined.res$logit <- as.numeric(combined.res$logit)
+combined.res$rf <- as.numeric(combined.res$rf)
+combined.res$gbm <- as.numeric(combined.res$gbm)
+combined.res$xgb <- as.numeric(combined.res$xgb)
+
+ensemble_func <-  function(a, b, c, d) (a + b + c + d)>=2
+
+combined.res$ensemble <- apply(combined.res, 1, 
+                                function(x) 
+                                  ensemble_func(x["logit"], x["rf"], x["gbm"], x["xgb"]))
+
+combined.res$ensemble <- as.numeric(combined.res$ensemble)
+ensemble.pred <- combined.res$ensemble
+ensembled_error <- mean(ensemble.pred != data.test$AD)
+ensembled_error 
 ```
 
-## Model 5: Ensembled Model
+```{r}
+ensemble.cm  <- table(ensemble.pred, data.test$AD)
+ensemble.cm
 
-Taking the majority vote of the result of previously built models gives us the fifth model. 
-The miclassification error is about 0.154
+ensemble.recall <- ensemble.cm[2,2]/sum(ensemble.cm[,2])
+round(ensemble.recall,3)
 
-```{r, include = F }
-a <- apply(cbind(fit.rf.final.pred, as.character(xgb.pred), as.character(pred.gbm),logit.pred ), 1, table)
-ensembled_error<-mean(sapply(a, function(x) names(x)[which(x>=2)[1]])!=data.test$AD)
+
+ensemble.precision <- ensemble.cm[2,2] / sum(ensemble.cm[2,]) # positive prediction, precision
+round(ensemble.precision ,3)
+
+ensemble.f1 <- (2*ensemble.recall*ensemble.precision)/(ensemble.recall + ensemble.precision)
+ensemble.f1
 ```
 
 
-## Final Model
+## Final Model & Validation
+
+We now compare the testing error and the F1 score of these five models.
+
+```{r, echo = F}
+res.comp <- data.frame(
+  Model = c("Logistic Model", "Random Rorest",  "Gradient Boosting Machine", "Extreme Gradient Boosting", "Ensemble Model"),
+  `Test Error` = c(logit.error, fit.rf.test.err, gbm.error ,xgb.error, ensembled_error),
+  `F1 Score` = c(logit.f1, rf.f1, gb.f1, xgb.f1, ensemble.f1)
+  )
+res.comp
+```
+
+We see that logistic regression has the highest testing error and lowest F1 Score. The other 4 models give the same testing error, but Extreme Gradient Boosting has a slightly higher F1 score. 
+
+We will still choose the ensemble model as our final model, since the ensemble method can help reduce variance and can be more robust. We use the validation dataset to evaluate our final model. The misclassification error rate turns out to be 17.4%. The model has a recall rate of 94.4% and a precision rate of 70.1%. Below, the confusion matrix suggests that the ensemble model has a high false discovery rate, which turns out to be 29.2%.
+
+|           | $Y=0$ | $Y=1$ |
+|-----------|-------|-------|
+|$\hat{Y}=0$|  42   |   2   |
+|$\hat{Y}=1$|  14   |   34  |
+
+
+```{r}
+# logit val
+logit.val.prob <- predict(fit.logit.final,data.test,type = "response")
+logit.val.pred <- as.factor(ifelse(logit.val.prob > 1/2, 1, 0))
+
+# random forest val
+rf.val.prob <- predict(fit.rf.final, data.val, type = 'prob')
+rf.val.pred <- as.factor(ifelse(rf.val.prob[,2] > 1/2, 1, 0))
+
+# gbm val
+gbm.val.prob <- predict(fit.gbm.final, n.trees = fit.gbm.final$n.trees, data.val)
+gbm.val.pred <- as.factor(ifelse(gbm.val.prob[,2,] >= 0, 1, 0))
+
+# xgb val
+colnames(dval) <- NULL
+pred <- predict(xgb.tuned$finalModel, dval)
+xgb.val.prob <- predict(xgb.tuned$finalModel, dval)
+xgb.val.pred <- as.factor(ifelse(xgb.val.prob  >= 0.5, 1, 0))
+
+# combine results + ensemble
+val.res <- data.frame(cbind(as.character(logit.val.pred),
+                            as.character(rf.val.pred), 
+                            as.character(gbm.val.pred), 
+                            as.character(xgb.val.pred)))
+
+colnames(val.res) <- c("logit", "rf", "gbm", "xgb")
+
+
+val.res$logit <- as.numeric(val.res$logit)
+val.res$rf <- as.numeric(val.res$rf)
+val.res$gbm <- as.numeric(val.res$gbm)
+val.res$xgb <- as.numeric(val.res$xgb)
+val.res$ensemble <- apply(val.res, 1, 
+                                function(x) ensemble_func(x["logit"], x["rf"], x["gbm"], x["xgb"]))
+
+val.res$ensemble <- as.numeric(val.res$ensemble)
+```
+
+
+
+```{r}
+# validation result
+ensemble.val.pred <- val.res$ensemble
+ensembled.val.error <- mean(ensemble.val.pred != data.val$AD)
+ensembled.val.error
+
+val.cm  <- table(ensemble.val.pred, data.val$AD)
+val.cm
+
+val.recall <- val.cm[2,2]/sum(val.cm[,2])
+round(val.recall,3)
+
+val.precision <- val.cm[2,2] / sum(val.cm[2,]) # positive prediction, precision
+round(val.precision ,3)
+
+val.f1 <- (2*val.recall*val.precision)/(val.recall + val.precision)
+val.f1
+
+fdr <- val.cm[2,1] / sum(val.cm[2,])
+fdr
+```
+
+
+# VI. Conclusion
+
+
+
+
+# VII. Reference 
+
+Fulton, L.V.; Dolezel, D.; Harrop, J.; Yan, Y.; Fulton, C.P. Classification of Alzheimer’s Disease with and without Imagery Using Gradient Boosted Machines and ResNet-50. Brain Sci. 2019, 9, 212. https://doi.org/10.3390/brainsci9090212
+
+Knight Alzheimer Disease Research Center, CDR Scoring Table: https://knightadrc.wustl.edu/professionals-clinicians/cdr-dementia-staging-instrument/cdr-scoring-table/
+
+# VIII. Appendix
 ```{r, include = F, eval = F}
 
 fit.logit.final.roc <- roc(data.train$AD, fit.logit.final$fitted)
@@ -679,25 +876,7 @@ legend("bottomright", c(paste0("AUC = ", round(fit.rf.final.roc$auc,2))),
 ```
  
 
-## TODO 要不要加个f1score啥的 
-```{r}
-testing_error = data.frame(
-  Model = c("Logistic Model", "Random Rorest",  "Gradient Boosting Machine", "XG Boost", "Ensembled Model"),
-  TestError = c(logit.error, fit.rf.test.err,gbm.error ,xgb.error,ensembled_error)
-  )
-testing_error
-```
+
  
  
- 
-
-
-# Conclusion
-
-# Reference 
-
-Fulton, L.V.; Dolezel, D.; Harrop, J.; Yan, Y.; Fulton, C.P. Classification of Alzheimer’s Disease with and without Imagery Using Gradient Boosted Machines and ResNet-50. Brain Sci. 2019, 9, 212. https://doi.org/10.3390/brainsci9090212
-
-Knight Alzheimer Disease Research Center, CDR Scoring Table: https://knightadrc.wustl.edu/professionals-clinicians/cdr-dementia-staging-instrument/cdr-scoring-table/
-
 
