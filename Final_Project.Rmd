@@ -45,12 +45,9 @@ The data was released by Open Access Series of Imaging Studies (OASIS).
 
 # II. Description of the Data
 
-Two datasets are used in this project. One dataset deals with cross-sectional MRI data for adults aged between 18 to 96. The other dataset deals with longitudinal MRI data for older adults between 60 to 96. The two datasets have the following variables in common: gender, age, Mini Mental State Examination score, estimated total intracranial volume, normalized whole brain volume, etc. After data cleansing, we append the two datasets and obtain 608 valid observations in total.
+Two datasets are used in this project. One dataset deals with cross-sectional MRI data for adults aged between 18 to 96. The other dataset deals with longitudinal MRI data for older adults between 60 to 96. After data cleansing, we append the two datasets and obtain 608 valid observations in total.
 
-
-
-
-The dataset is a longitudinal collection of MRI scan history of 150 elder adults aged between 60 and 98. Subjects may be scanned more than once, and there are 373 imaging sessions recorded in total. The following table showcases the features that the original data contains:
+The following table showcases the features that the data contains:
 
 |  Variable Name   | Description |
 |-------|-------|
@@ -65,8 +62,9 @@ The dataset is a longitudinal collection of MRI scan history of 150 elder adults
 | eTIV | Estimated total intracranial Volume |
 | nWBV | Normalized whole brain volume |
 | ASF | Atlas scaling factor |
-| MR.Delay | MR Delay Time |
 | CDR | Clinical Dementia Rating |
+
+We dropped `Hand` from our analysis since all the subjects are right-handed.
 
 Here are some more detailed explanations of the terms mentioned above:
 
