@@ -239,7 +239,7 @@ data %>%
 ```
 
 
-We also notice that the estimated total intracranial volume (eTIV) differ between demantia and non-demantia group. People with demantia tend to have a lower eTIV value.
+We also notice that the estimated total intracranial volume (eTIV) differ between dementia and non-dementia group. People with dementia tend to have a lower eTIV value.
 
 ```{r, echo = F}
 data %>%
@@ -898,7 +898,7 @@ In this study, we use the longitudinal and cross-sectional MRI data of 608 elder
 
 The Mini Mental State Exam score turns out to have high significance in all of the models we build, including logistic classification, random forest and boosting model. This suggests that a person with low mini mental state exam score will be more likely to be diagnosed with dementia. 
 
-In addition, age, nWBV (normalized whole brain volume) and eTIV (estimated total intracranial volume) also show significance. Subjects with higher age, smaller normalized whole brain volume and smaller estimated total intracranial volume have a higher chance of being diagnosed with demantia.
+In addition, age, nWBV (normalized whole brain volume) and eTIV (estimated total intracranial volume) also show significance. Subjects with higher age, smaller normalized whole brain volume and smaller estimated total intracranial volume have a higher chance of being diagnosed with dementia.
 
 
 # VII. Reference 
