@@ -212,7 +212,7 @@ We see that subjects with AD tend to have lower MMSE score, but there is no clea
 
 ```{r echo = F}
 g <- data %>% 
-  ggplot(aes(x = MMSE,y = Age, color = AD, size = 2)) +
+  ggplot(aes(x = MMSE,y = Age, color = AD)) +
   geom_jitter(alpha = 0.7) +
   labs(title = "Mini Mental State Examination Score, Age, eTIV and AD diagnosis",
        x = "Mini Mental State Examination Score") +
