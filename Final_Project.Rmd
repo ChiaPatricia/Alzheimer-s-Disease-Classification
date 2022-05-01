@@ -296,7 +296,7 @@ data.val <- data[idx_val,] %>% select(-c(ID))
 
 ### Model Fitting
 
-We first fit a logistic regression model. We select a sparse model by using LASSO regularization technique and use the **cv.glmnet()** function to implement cross validation. The criteria is set to be deviance and 10-fold cross validation is applied. 
+We first fit a logistic classification model. We select a sparse model by using LASSO regularization technique and use the **cv.glmnet()** function to implement cross validation. The criteria is set to be deviance and 10-fold cross validation is applied. 
 
 The plot below shows how the deviance varies with different values of $\lambda$ and the number of non-zero coefficients.
 
