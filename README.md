@@ -16,3 +16,7 @@ Disease Research Center at Washington University and Open Access Series of Imagi
 # Our goal
 
 Use Magnetic Resonance Imaging (MRI) data for both demented and nondemented adults to build classifiers that predicts whether a subject will be diagnosed to develop dementia.
+
+
+# Data Science Live
+Link: https://jh-cai.com/modern-data-mining/dsl5.html
